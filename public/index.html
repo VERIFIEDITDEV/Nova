@@ -1,1 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#6835ed">
+<title>NovaPay</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://js.paystack.co/v2/inline.js"></script>
+<script src="https://checkout.flutterwave.com/v3.js"></script>
+</head>
+<body>
+<div id="warning" class="warning hidden"></div>
 
+<section id="auth" class="auth">
+  <div class="authbox">
+    <div class="brand">N</div>
+    <h1>NovaPay</h1>
+    <p>Wallet • Trading • Gift Cards • Marketplace</p>
+    <div class="tabs"><button class="active" data-tab="login">Login</button><button data-tab="signup">Sign up</button></div>
+    <form id="login">
+      <input id="le" type="email" placeholder="Email" required autocomplete="email">
+      <input id="lp" type="password" placeholder="Password" required autocomplete="current-password">
+      <button class="primary">Login</button>
+      <button type="button" id="google" class="secondary">Continue with Google</button>
+      <button type="button" id="forgot" class="link">Forgot password?</button>
+    </form>
+    <form id="signup" class="hidden">
+      <input id="sn" placeholder="Full name" required autocomplete="name">
+      <input id="se" type="email" placeholder="Email" required autocomplete="email">
+      <input id="sp" type="password" minlength="8" placeholder="Password (min 8 characters)" required autocomplete="new-password">
+      <button class="primary">Create account</button>
+      <button type="button" id="googles" class="secondary">Sign up with Google</button>
+    </form>
+    <div id="authmsg" class="status"></div>
+  </div>
+</section>
+
+<div id="app" class="app hidden">
+  <header>
+    <div class="user"><div id="avatar" class="avatar">N</div><div><small>Welcome back</small><b id="name">User</b></div></div>
+    <div><button id="care">💬</button><button id="bell">🔔</button></div>
+  </header>
+
+  <main id="home" class="page active">
+    <section class="balance">
+      <div class="row"><span>● Available balance</span><button class="link" id="history">Transaction history ›</button></div>
+      <h2 id="bal">₦0.00</h2>
+      <div class="actions"><button class="primary" id="fund">Add money</button><button class="secondary" data-page="withdraw">Withdraw</button></div>
+      <div class="lock">🔐 Deposit bonus locked <b id="bonus">$0.00 / $5.00</b></div>
+    </section>
+    <section class="quick">
+      <button id="fund2">🏦<b>Fund</b></button><button data-page="swap">🔄<b>Swap</b></button>
+      <button data-page="trade">📈<b>Trade</b></button><button data-page="giftcards">🎁<b>Gift cards</b></button>
+    </section>
+    <section class="panel"><div class="row"><h3>Crypto assets</h3><button class="link" data-page="swap">Convert ›</button></div><div id="assets"></div></section>
+    <section class="panel"><h3>Services</h3><div class="services">
+      <button data-page="trade">📈<span>Trading</span></button><button data-page="giftcards">🎁<span>Gift Cards</span></button>
+      <button data-page="market">🛍️<span>Shop</span></button><button data-page="swap">🔄<span>Swap</span></button>
+      <button data-page="rewards">✨<span>Rewards</span></button><button data-page="withdraw">💸<span>Withdraw</span></button>
+      <button data-page="deposit">⛓️<span>Blockchain</span></button><button data-page="profile">👤<span>Profile</span></button>
+    </div></section>
+  </main>
+
+  <main id="trade" class="page">
+    <div class="title"><button data-page="home">‹</button><div><h2>Trade</h2><small>Live prices • market orders</small></div></div>
+    <section class="panel">
+      <div class="toolbar">
+        <select id="pair"><option value="BTC">BTC/USDT</option><option value="ETH">ETH/USDT</option><option value="BNB">BNB/USDT</option></select>
+        <select id="interval"><option>1m</option><option>5m</option><option>15m</option><option>1h</option></select>
+        <b id="price">…</b>
+      </div>
+      <canvas id="chart" height="270"></canvas>
+      <div class="sides"><button id="buy" class="active">BUY</button><button id="sell">SELL</button></div>
+      <label id="tradelabel">USDT to spend</label>
+      <input id="tradeamt" type="number" inputmode="decimal" min="0" placeholder="Amount">
+      <div id="tradeinfo" class="quote"></div>
+      <button id="tradebtn" class="primary full">Place market order</button>
+      <div id="trademsg" class="status"></div>
+      <small>Orders fill instantly at the live market price plus the platform fee, against your NovaPay wallet balance.</small>
+    </section>
+    <section class="panel"><h3>Recent orders</h3><div id="orders"></div></section>
+  </main>
+
+  <main id="giftcards" class="page">
+    <div class="title"><button data-page="home">‹</button><div><h2>Gift Cards</h2><small>150 products • paid from your NGN wallet</small></div></div>
+    <div class="filters"><input id="giftsearch" placeholder="Search gift cards"><select id="giftregion"><option value="">All regions</option><option>US</option><option>UK</option><option>NG</option><option>EU</option></select></div>
+    <div id="gifts" class="grid"></div>
+  </main>
+
+  <main id="market" class="page">
+    <div class="title"><button data-page="home">‹</button><div><h2>Marketplace</h2><small>Clothes • gold watches • gold accessories</small></div></div>
+    <div id="products" class="grid"></div>
+  </main>
+
+  <main id="swap" class="page">
+    <div class="title"><button data-page="home">‹</button><div><h2>Swap & Convert</h2><small>Instant conversion inside your wallet</small></div></div>
+    <section class="panel">
+      <label>From</label><select id="from"><option>NGN</option><option>USDT</option><option>BTC</option><option>ETH</option><option>BNB</option></select>
+      <div class="swapicon">⇅</div>
+      <label>To</label><select id="to"><option>USDT</option><option>NGN</option><option>BTC</option><option>ETH</option><option>BNB</option></select>
+      <label>Amount</label><input id="swapamt" type="number" inputmode="decimal" min="0" placeholder="Amount">
+      <div id="quote" class="quote">Tap “Get quote” to see the live rate.</div>
+      <button id="quoteBtn" class="secondary full">Get quote</button>
+      <button id="swapBtn" class="primary full">Confirm conversion</button>
+      <div id="swapmsg" class="status"></div>
+    </section>
+  </main>
+
+  <main id="rewards" class="page">
+    <div class="title"><button data-page="home">‹</button><div><h2>Rewards</h2><small>Invitation link and bonuses</small></div></div>
+    <section class="panel center"><div class="star">✨</div><h3>Invite & Earn</h3><p>Friends who sign up with your link are linked to your account. Rewards are credited only after qualifying activity is verified.</p><div class="ref"><span id="ref">loading...</span><button id="copy" class="secondary">Copy</button></div></section>
+    <section class="panel"><div class="row"><span>Locked deposit bonus</span><b id="rb">$0.00</b></div><div class="row"><span>Referral reward</span><b id="rr">$0.00</b></div></section>
+  </main>
+
+  <main id="withdraw" class="page">
+    <div class="title"><button data-page="home">‹</button><div><h2>Withdrawal</h2><small>Minimum $10 equivalent • reviewed before payout</small></div></div>
+    <section class="panel">
+      <label>Asset</label><select id="wa"><option>USDT</option><option>NGN</option><option>BTC</option><option>ETH</option><option>BNB</option></select>
+      <label>Network</label><select id="wn"></select>
+      <label>Amount <small id="wbal"></small></label><input id="wam" type="number" inputmode="decimal" min="0" placeholder="Amount">
+      <label id="wdlabel">Destination</label><input id="wd" placeholder="Wallet address or bank details" autocomplete="off">
+      <label>Transaction passcode</label><input id="wp" type="password" inputmode="numeric" maxlength="8" autocomplete="off">
+      <button id="withdrawBtn" class="primary full">Request withdrawal</button>
+      <div id="wmsg" class="status"></div>
+      <small>Double-check the network and address. Crypto sent to the wrong network cannot be recovered.</small>
+    </section>
+  </main>
+
+  <main id="profile" class="page">
+    <div class="title"><button data-page="home">‹</button><div><h2>Profile & Security</h2><small>Account settings</small></div></div>
+    <section class="panel">
+      <div class="profiletop"><div id="pavatar" class="avatar big">N</div><div><h3 id="pname">User</h3><small id="pemail"></small></div></div>
+      <label>Full name</label><input id="pn" maxlength="60"><label>Country</label><input id="pc" maxlength="60">
+      <button id="save" class="primary full">Save profile</button>
+    </section>
+    <section class="panel">
+      <div class="row"><span>Transaction passcode</span><button id="pass" class="secondary">Set/change</button></div>
+      <div class="row"><span>Face verification</span><button id="face" class="secondary">Start</button></div>
+      <div class="row"><span>Account status</span><b id="statusText">active</b></div>
+      <button id="logout" class="danger full">Log out</button>
+    </section>
+  </main>
+
+  <main id="deposit" class="page">
+    <div class="title"><button data-page="home">‹</button><div><h2>Blockchain Deposit</h2><small>Reviewed before crediting</small></div></div>
+    <section class="panel">
+      <label>1. Send to this NovaPay address</label>
+      <div class="ref"><span id="depaddr">loading…</span><button id="copyaddr" class="secondary">Copy</button></div>
+      <small>Supported: USDT (Ethereum, BNB Chain, Polygon), native ETH (Ethereum), native BNB (BNB Chain).</small>
+      <label>2. Network you used</label>
+      <select id="network"><option value="ethereum">Ethereum</option><option value="polygon">Polygon</option><option value="bsc">BNB Smart Chain</option></select>
+      <label>Your sending address</label><input id="pub" placeholder="0x..." autocomplete="off">
+      <label>Transaction hash</label><input id="tx" placeholder="0x..." autocomplete="off">
+      <small>Never enter a seed phrase or private key.</small>
+      <button id="verify" class="primary full">Submit deposit</button>
+      <div id="dmsg" class="status"></div>
+    </section>
+  </main>
+
+  <main id="historyPage" class="page">
+    <div class="title"><button data-page="home">‹</button><div><h2>Transaction History</h2><small>Overall account history</small></div></div>
+    <section class="panel" id="historyList"></section>
+  </main>
+
+  <nav>
+    <button data-page="home">🏠<span>Home</span></button><button data-page="trade">📈<span>Trade</span></button>
+    <button data-page="rewards">✨<span>Rewards</span></button><button data-page="giftcards">🎁<span>Cards</span></button>
+    <button data-page="profile">👤<span>Me</span></button>
+  </nav>
+</div>
+
+<div id="modal"></div>
+<div id="toast"></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
