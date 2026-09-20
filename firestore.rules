@@ -1,0 +1,30 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isAdmin()  { return signedIn() && request.auth.token.admin == true; }
+    function owns(data) { return signedIn() && data.uid == request.auth.uid; }
+
+    // Profiles are created by the ensureProfile Cloud Function (never by the browser),
+    // so nobody can create an account that starts with a made-up balance.
+    match /users/{id} {
+      allow read: if (signedIn() && request.auth.uid == id) || isAdmin();
+      allow create, delete: if false;
+      // Users may edit ONLY their display name and country. Balances, status, etc. are server-only.
+      allow update: if signedIn() && request.auth.uid == id
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'country', 'updatedAt']);
+    }
+
+    match /transactions/{id}       { allow read: if owns(resource.data) || isAdmin(); allow write: if false; }
+    match /orders/{id}             { allow read: if owns(resource.data) || isAdmin(); allow write: if false; }
+    match /tradeOrders/{id}        { allow read: if owns(resource.data) || isAdmin(); allow write: if false; }
+    match /swapOrders/{id}         { allow read: if owns(resource.data) || isAdmin(); allow write: if false; }
+    match /withdrawals/{id}        { allow read: if owns(resource.data) || isAdmin(); allow write: if false; }
+    match /blockchainDeposits/{id} { allow read: if owns(resource.data) || isAdmin(); allow write: if false; }
+    match /notifications/{id}      { allow read: if owns(resource.data) || isAdmin(); allow write: if false; }
+
+    // userSecrets (passcode hash) and config are only reachable from Cloud Functions.
+    match /{document=**} { allow read, write: if false; }
+  }
+}
