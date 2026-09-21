@@ -408,7 +408,7 @@ async function createPendingDeposit(opts) {
 
 async function startFiatPayment(provider) {
   const amountUSD = Number($('fa').value);
-  if (!(amountUSD >= 1)) return msg($('fm'), 'Minimum $1', 'error');
+  if (!(amountUSD >= 1)) return msg($('fm'), 'Minimum $10', 'error');
   if (data?.status === 'banned') return msg($('fm'), 'Account banned', 'error');
 
   const email = me.email || '';
