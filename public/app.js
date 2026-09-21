@@ -33,7 +33,7 @@ const SUPPORT = { telegram: '', x: '', tiktok: '' };
 
 const BINANCE_REST = 'https://data-api.binance.vision/api/v3';
 const BINANCE_WS = 'wss://data-stream.binance.vision/ws';
-const DEFAULT_USD_NGN = 1600;
+const DEFAULT_USD_NGN = 16,345.18;
 const PLATFORM_FEE_PCT = 0.8;
 const COMPANY_DEPOSIT_ADDRESS = '0xYourCompanyWalletAddressHere';
 
