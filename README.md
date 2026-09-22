@@ -121,3 +121,33 @@ If Firestore prompts you, create:
 
 See **[ADMIN_CREDIT.md](./ADMIN_CREDIT.md)** for the exact console clicks to credit deposits, withdrawals, and orders.
 
+
+
+## New features (this build)
+
+- **Email activation** — verification link sent on sign-up; banner + Resend until confirmed
+- **MT5-style trading** — open LONG/SHORT with margin & leverage; live PnL; **Close position** settles to USDT
+- **Light / dark theme** — header 🌙 button or Profile → Theme
+- **Show / hide password** on login, sign-up, and withdrawal passcode
+- **Multi-currency display** — USD, EUR, GBP, NGN, GHS, KES, ZAR, AED, INR, CAD (display only; wallet base remains USD)
+- **Notification permission** — prompted after login; enable again from Profile
+- **Withdrawals** — **crypto or gift card only** (no bank/fiat)
+
+### Firestore indexes (if prompted)
+
+- `positions`: `uid` Asc, `status` Asc  
+- Optional: `uid` Asc, `status` Asc, `createdAt` Desc  
+
+
+## Deposit wallets (Trust Wallet)
+
+| Network | Address |
+|---------|---------|
+| Bitcoin | `bc1qt037wt7yrtk2kcx9ulmsjmzg728qllwlalnux2` |
+| BNB / BEP20 / EVM | `0x65e93616dB2052e3c5796CDCC7131f6B626bFBB2` |
+| Litecoin | `ltc1qnuhh7x4wp2j69jehjq3gp3ja4c06nudgrpwykg` |
+| TRON | `TKmoSzHmcfEhTjqt38z1F7sKY6eZiPWckb` |
+
+Minimum deposit: **$10** (fiat and crypto).
+
+Crypto balances on the home screen show **live USD value** (Binance rate) so trades and manual credits stay consistent with market price.
