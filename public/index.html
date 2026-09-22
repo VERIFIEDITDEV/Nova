@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -15,6 +15,10 @@
 </head>
 <body>
 <div id="warning" class="warning hidden"></div>
+<div id="emailVerifyBanner" class="email-banner hidden">
+  <span>📧 Confirm your email to unlock full access.</span>
+  <button type="button" id="resendVerify" class="secondary">Resend link</button>
+</div>
 
 <!-- ===================== AUTH ===================== -->
 <section id="auth" class="auth">
@@ -29,7 +33,10 @@
 
     <form id="login">
       <input id="le" type="email" placeholder="Email" required autocomplete="email">
-      <input id="lp" type="password" placeholder="Password" required autocomplete="current-password">
+      <div class="pw-wrap">
+        <input id="lp" type="password" placeholder="Password" required autocomplete="current-password">
+        <button type="button" class="pw-toggle" data-target="lp" aria-label="Show password">👁</button>
+      </div>
       <button class="primary">Login</button>
       <button type="button" id="google" class="secondary">Continue with Google</button>
       <button type="button" id="forgot" class="link">Forgot password?</button>
@@ -38,7 +45,10 @@
     <form id="signup" class="hidden">
       <input id="sn" placeholder="Full name" required autocomplete="name" maxlength="80">
       <input id="se" type="email" placeholder="Email" required autocomplete="email">
-      <input id="sp" type="password" minlength="8" placeholder="Password (min 8 characters)" required autocomplete="new-password">
+      <div class="pw-wrap">
+        <input id="sp" type="password" minlength="8" placeholder="Password (min 8 characters)" required autocomplete="new-password">
+        <button type="button" class="pw-toggle" data-target="sp" aria-label="Show password">👁</button>
+      </div>
 
       <label class="field-label">Country</label>
       <select id="scountry" required>
@@ -102,6 +112,7 @@
       <div><small>Welcome back</small><b id="name">User</b></div>
     </div>
     <div class="header-actions">
+      <button id="themeBtn" title="Toggle theme">🌙</button>
       <button id="care" title="Support">💬</button>
       <button id="bell" title="Notifications">🔔</button>
     </div>
@@ -114,8 +125,22 @@
         <span>● Available balance</span>
         <button class="link" id="history">History ›</button>
       </div>
+      <div class="bal-currency-row">
+        <select id="displayCurrency" class="currency-select" title="Display currency">
+          <option value="USD">USD $</option>
+          <option value="EUR">EUR €</option>
+          <option value="GBP">GBP £</option>
+          <option value="NGN">NGN ₦</option>
+          <option value="GHS">GHS ₵</option>
+          <option value="KES">KES</option>
+          <option value="ZAR">ZAR R</option>
+          <option value="AED">AED</option>
+          <option value="INR">INR ₹</option>
+          <option value="CAD">CAD $</option>
+        </select>
+      </div>
       <h2 id="bal">$0.00</h2>
-      <div class="bal-sub" id="balSub">≈ ₦0.00 · USD default</div>
+      <div class="bal-sub" id="balSub">Base wallet: $0.00 USD</div>
       <div class="actions">
         <button class="primary" id="fund">Add money</button>
         <button class="secondary" data-page="withdraw">Withdraw</button>
@@ -154,16 +179,17 @@
         <button data-page="rewards">✨<span>Rewards</span></button>
         <button data-page="withdraw">💸<span>Withdraw</span></button>
         <button data-page="deposit">⛓️<span>Crypto Deposit</span></button>
+        <button data-page="historyPage">📜<span>History</span></button>
         <button data-page="profile">👤<span>Profile</span></button>
       </div>
     </section>
   </main>
 
-  <!-- TRADE -->
+  <!-- TRADE (MT5-style open positions) -->
   <main id="trade" class="page">
     <div class="title">
       <button data-page="home">‹</button>
-      <div><h2>Live Trade</h2><small>Real-time Binance prices · market orders</small></div>
+      <div><h2>Live Trade</h2><small>MT5-style · open &amp; close positions · live Binance</small></div>
     </div>
     <section class="panel trade-panel">
       <div class="toolbar">
@@ -195,11 +221,20 @@
         <div class="ob-side bid" id="bids"></div>
       </div>
       <div class="sides">
-        <button id="buy" class="active buy-btn">BUY</button>
-        <button id="sell" class="sell-btn">SELL</button>
+        <button id="buy" class="active buy-btn">BUY / LONG</button>
+        <button id="sell" class="sell-btn">SELL / SHORT</button>
       </div>
-      <label id="tradelabel">USDT to spend</label>
-      <input id="tradeamt" type="number" inputmode="decimal" min="0" step="any" placeholder="Amount">
+      <label id="tradelabel">Margin (USDT)</label>
+      <input id="tradeamt" type="number" inputmode="decimal" min="0" step="any" placeholder="Margin in USDT">
+      <div class="leverage-row">
+        <label>Leverage</label>
+        <select id="leverage">
+          <option value="1">1x</option>
+          <option value="2">2x</option>
+          <option value="5" selected>5x</option>
+          <option value="10">10x</option>
+        </select>
+      </div>
       <div class="quick-amts">
         <button type="button" data-pct="25">25%</button>
         <button type="button" data-pct="50">50%</button>
@@ -207,12 +242,16 @@
         <button type="button" data-pct="100">Max</button>
       </div>
       <div id="tradeinfo" class="quote"></div>
-      <button id="tradebtn" class="primary full">Place market order</button>
+      <button id="tradebtn" class="primary full">Open position</button>
       <div id="trademsg" class="status"></div>
-      <small>Orders fill at the live market price + platform fee against your NovaPay wallet. Prices stream from Binance.</small>
+      <small>Opens a position at the live price. Your margin is locked until you close. Profit/loss settles to your USDT wallet when you close.</small>
     </section>
     <section class="panel">
-      <h3>Recent orders</h3>
+      <h3>Open positions</h3>
+      <div id="openPositions"><p style="color:var(--muted)">No open positions.</p></div>
+    </section>
+    <section class="panel">
+      <h3>Closed / history</h3>
       <div id="orders"></div>
     </section>
   </main>
@@ -262,6 +301,8 @@
         <option>ETH</option>
         <option>BNB</option>
         <option>SOL</option>
+        <option>LTC</option>
+        <option>TRX</option>
       </select>
       <div class="swapicon">⇅</div>
       <label>To</label>
@@ -273,6 +314,8 @@
         <option>ETH</option>
         <option>BNB</option>
         <option>SOL</option>
+        <option>LTC</option>
+        <option>TRX</option>
       </select>
       <label>Amount</label>
       <input id="swapamt" type="number" inputmode="decimal" min="0" step="any" placeholder="Amount">
@@ -301,34 +344,57 @@
     </section>
   </main>
 
-  <!-- WITHDRAW -->
+  <!-- WITHDRAW — crypto & gift card only -->
   <main id="withdraw" class="page">
     <div class="title">
       <button data-page="home">‹</button>
-      <div><h2>Withdrawal</h2><small>Minimum $10 equivalent · reviewed before payout</small></div>
+      <div><h2>Withdrawal</h2><small>Crypto or gift card only · min $10 · reviewed</small></div>
     </div>
     <section class="panel">
-      <label>Asset</label>
-      <select id="wa">
-        <option>USD</option>
-        <option>USDT</option>
-        <option>NGN</option>
-        <option>BTC</option>
-        <option>ETH</option>
-        <option>BNB</option>
-        <option>SOL</option>
+      <label>Withdraw as</label>
+      <select id="wtype">
+        <option value="crypto">Cryptocurrency</option>
+        <option value="giftcard">Gift card</option>
       </select>
-      <label>Network</label>
-      <select id="wn"></select>
-      <label>Amount <small id="wbal"></small></label>
-      <input id="wam" type="number" inputmode="decimal" min="0" step="any" placeholder="Amount">
-      <label id="wdlabel">Destination</label>
-      <input id="wd" placeholder="Wallet address or bank details" autocomplete="off">
+      <div id="wCryptoFields">
+        <label>Asset</label>
+        <select id="wa">
+          <option>USDT</option>
+          <option>BTC</option>
+          <option>ETH</option>
+          <option>BNB</option>
+          <option>SOL</option>
+          <option>LTC</option>
+          <option>TRX</option>
+        </select>
+        <label>Network</label>
+        <select id="wn"></select>
+        <label id="wdlabel">Wallet address</label>
+        <input id="wd" placeholder="Wallet address" autocomplete="off">
+      </div>
+      <div id="wGiftFields" class="hidden">
+        <label>Gift card brand</label>
+        <select id="wGiftBrand">
+          <option value="Amazon">Amazon</option>
+          <option value="Apple">Apple</option>
+          <option value="Google Play">Google Play</option>
+          <option value="Steam">Steam</option>
+          <option value="Netflix">Netflix</option>
+          <option value="Spotify">Spotify</option>
+        </select>
+        <label>Delivery email</label>
+        <input id="wGiftEmail" type="email" placeholder="email@example.com">
+      </div>
+      <label>Amount (USD value) <small id="wbal"></small></label>
+      <input id="wam" type="number" inputmode="decimal" min="0" step="any" placeholder="Amount in USD equivalent">
       <label>Transaction passcode</label>
-      <input id="wp" type="password" inputmode="numeric" maxlength="8" autocomplete="off">
+      <div class="pw-wrap">
+        <input id="wp" type="password" inputmode="numeric" maxlength="8" autocomplete="off">
+        <button type="button" class="pw-toggle" data-target="wp" aria-label="Show passcode">👁</button>
+      </div>
       <button id="withdrawBtn" class="primary full">Request withdrawal</button>
       <div id="wmsg" class="status"></div>
-      <small>Double-check network and address. Crypto sent to the wrong network cannot be recovered.</small>
+      <small>Bank / fiat withdrawals are not available. Crypto: check network &amp; address. Gift cards: delivered after admin fulfilment.</small>
     </section>
   </main>
 
@@ -360,6 +426,8 @@
     </section>
     <section class="panel">
       <div class="row"><span>Transaction passcode</span><button id="pass" class="secondary">Set / change</button></div>
+      <div class="row"><span>Push notifications</span><button id="notifPerm" class="secondary">Enable</button></div>
+      <div class="row"><span>Theme</span><button id="themeBtn2" class="secondary">Toggle</button></div>
       <div class="row"><span>Account status</span><b id="statusText">active</b></div>
       <button id="logout" class="danger full">Log out</button>
     </section>
@@ -381,13 +449,15 @@
       <h3>Manual on-chain deposit</h3>
       <label>1. Send to this NovaPay address</label>
       <div class="ref"><span id="depaddr">loading…</span><button id="copyaddr" class="secondary">Copy</button></div>
-      <small>Supported: USDT (ERC20 / BEP20 / Polygon), ETH, BNB, SOL.</small>
+      <small>Min deposit <b>$10</b>. Networks: Bitcoin, BNB/BEP20, Ethereum, Litecoin, TRON. Match the address to the network.</small>
       <label>2. Network you used</label>
       <select id="network">
-        <option value="ethereum">Ethereum</option>
+        <option value="bitcoin">Bitcoin (BTC)</option>
+        <option value="bsc" selected>BNB Smart Chain (BEP20)</option>
+        <option value="ethereum">Ethereum (ERC20)</option>
+        <option value="litecoin">Litecoin (LTC)</option>
+        <option value="tron">TRON (TRC20)</option>
         <option value="polygon">Polygon</option>
-        <option value="bsc">BNB Smart Chain</option>
-        <option value="solana">Solana</option>
       </select>
       <label>Your sending address</label>
       <input id="pub" placeholder="0x… or Solana address" autocomplete="off">
@@ -402,9 +472,20 @@
   <main id="historyPage" class="page">
     <div class="title">
       <button data-page="home">‹</button>
-      <div><h2>Transaction History</h2><small>All account activity</small></div>
+      <div><h2>Transaction History</h2><small>Deposits · trades · withdrawals · orders</small></div>
     </div>
-    <section class="panel" id="historyList"></section>
+    <div class="hist-filters" id="histFilters">
+      <button type="button" class="hist-filter active" data-hfilter="all">All</button>
+      <button type="button" class="hist-filter" data-hfilter="deposit">Deposits</button>
+      <button type="button" class="hist-filter" data-hfilter="trade">Trades</button>
+      <button type="button" class="hist-filter" data-hfilter="withdrawal">Withdrawals</button>
+      <button type="button" class="hist-filter" data-hfilter="order">Orders</button>
+      <button type="button" class="hist-filter" data-hfilter="swap">Swaps</button>
+    </div>
+    <section class="panel hist-panel">
+      <div id="histSummary" class="hist-summary"></div>
+      <div id="historyList"><p class="muted">Loading…</p></div>
+    </section>
   </main>
 
   <nav>

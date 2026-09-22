@@ -7,7 +7,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.1.0/firebas
 import {
   getAuth, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword,
   createUserWithEmailAndPassword, sendPasswordResetEmail, onAuthStateChanged,
-  signOut, updateProfile
+  signOut, updateProfile, sendEmailVerification, reload
 } from 'https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js';
 import {
   getFirestore, doc, setDoc, updateDoc, getDoc, collection, query, where,
@@ -35,7 +35,32 @@ const BINANCE_REST = 'https://data-api.binance.vision/api/v3';
 const BINANCE_WS = 'wss://data-stream.binance.vision/ws';
 const DEFAULT_USD_NGN = 1600;
 const PLATFORM_FEE_PCT = 0.8;
-const COMPANY_DEPOSIT_ADDRESS = '0xYourCompanyWalletAddressHere';
+const COMPANY_DEPOSIT_ADDRESS = '0x65e93616dB2052e3c5796CDCC7131f6B626bFBB2'; // default EVM / BNB
+
+// Your Trust Wallet receive addresses (shown on Crypto Deposit)
+const DEPOSIT_WALLETS = {
+  bitcoin:  'bc1qt037wt7yrtk2kcx9ulmsjmzg728qllwlalnux2',
+  bsc:      '0x65e93616dB2052e3c5796CDCC7131f6B626bFBB2',
+  ethereum: '0x65e93616dB2052e3c5796CDCC7131f6B626bFBB2',
+  polygon:  '0x65e93616dB2052e3c5796CDCC7131f6B626bFBB2',
+  litecoin: 'ltc1qnuhh7x4wp2j69jehjq3gp3ja4c06nudgrpwykg',
+  tron:     'TKmoSzHmcfEhTjqt38z1F7sKY6eZiPWckb',
+  solana:   '0x65e93616dB2052e3c5796CDCC7131f6B626bFBB2'
+};
+const MIN_DEPOSIT_USD = 10;
+
+
+// Display FX vs USD (approx; NGN uses config rate)
+const FX = {
+  USD: 1, EUR: 0.92, GBP: 0.79, NGN: null, GHS: 15.5, KES: 129,
+  ZAR: 18.2, AED: 3.67, INR: 83.5, CAD: 1.36
+};
+const FX_SYMBOL = {
+  USD: '$', EUR: '€', GBP: '£', NGN: '₦', GHS: '₵', KES: 'KSh ',
+  ZAR: 'R', AED: 'AED ', INR: '₹', CAD: 'CA$'
+};
+let displayCurrency = localStorage.getItem('np_currency') || 'USD';
+
 
 const CRYPTO_BY_COUNTRY = {
   NG: ['moonpay', 'trust', 'manual'],
@@ -99,9 +124,124 @@ const db = getFirestore(app);
 const google = new GoogleAuthProvider();
 
 const $ = id => document.getElementById(id);
+// Password show/hide
+document.addEventListener('click', e => {
+  const t = e.target.closest('.pw-toggle');
+  if (!t) return;
+  const input = $(t.dataset.target);
+  if (!input) return;
+  const show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  t.textContent = show ? '🙈' : '👁';
+  t.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+});
+
+// Theme
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('np_theme', theme);
+  const icon = theme === 'dark' ? '☀️' : '🌙';
+  const b1 = $('themeBtn'), b2 = $('themeBtn2');
+  if (b1) b1.textContent = icon;
+  if (b2) b2.textContent = theme === 'dark' ? 'Light mode' : 'Dark mode';
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = theme === 'dark' ? '#12101a' : '#6835ed';
+}
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme') || 'light';
+  applyTheme(cur === 'dark' ? 'light' : 'dark');
+}
+applyTheme(localStorage.getItem('np_theme') || 'light');
+
+function updateEmailBanner(u) {
+  const ban = $('emailVerifyBanner');
+  if (!ban) return;
+  const need = u && !u.emailVerified && u.providerData?.some(p => p.providerId === 'password');
+  ban.classList.toggle('hidden', !need);
+  document.body.classList.toggle('has-email-banner', !!need);
+}
+
+async function maybeRequestNotifications() {
+  if (!('Notification' in window)) return;
+  if (localStorage.getItem('np_notif_asked')) return;
+  // mild delay so UI settles
+  setTimeout(async () => {
+    if (Notification.permission === 'default') {
+      localStorage.setItem('np_notif_asked', '1');
+      try {
+        const p = await Notification.requestPermission();
+        if (p === 'granted') toast('Notifications enabled');
+      } catch (_) {}
+    }
+  }, 2500);
+}
+
+function pushLocalNotif(title, body) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  try { new Notification(title, { body, icon: '/favicon.ico' }); } catch (_) {}
+}
+
+async function resendVerification() {
+  try {
+    if (!me) return;
+    await reload(me);
+    if (me.emailVerified) {
+      updateEmailBanner(me);
+      toast('Email already verified');
+      return;
+    }
+    await sendEmailVerification(me);
+    toast('Activation link sent — check your inbox');
+  } catch (x) { toast(err(x)); }
+}
+
+async function requestNotifFromProfile() {
+  if (!('Notification' in window)) return toast('Notifications not supported on this device');
+  localStorage.setItem('np_notif_asked', '1');
+  try {
+    const p = await Notification.requestPermission();
+    if (p === 'granted') {
+      toast('Notifications enabled');
+      pushLocalNotif('NovaPay', 'You will receive trade and deposit alerts');
+      if ($('notifPerm')) $('notifPerm').textContent = 'Enabled';
+    } else toast('Permission denied');
+  } catch (x) { toast(err(x)); }
+}
+
+
+
+
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const moneyUSD = n => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(n || 0));
 const moneyNGN = n => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN' }).format(Number(n || 0));
+async function refreshAssetUsdValues(assets) {
+  const list = assets || (data && data.assets) || {};
+  for (const x of ['USDT', 'BTC', 'ETH', 'BNB', 'SOL', 'LTC', 'TRX']) {
+    const el = document.querySelector('.asset-usd[data-asset="' + x + '"]');
+    if (!el) continue;
+    const qty = Number(list[x] || 0);
+    try {
+      const px = x === 'USDT' ? 1 : await livePrice(x);
+      const usd = qty * px;
+      el.textContent = '≈ ' + moneyUSD(usd);
+    } catch (_) {
+      el.textContent = '';
+    }
+  }
+}
+
+function formatDisplay(usdAmount) {
+  const c = displayCurrency || 'USD';
+  let rate = FX[c];
+  if (c === 'NGN') rate = usdNgn;
+  if (!(rate > 0)) rate = 1;
+  const v = Number(usdAmount || 0) * rate;
+  const sym = FX_SYMBOL[c] || c + ' ';
+  if (c === 'USD') return moneyUSD(usdAmount);
+  if (c === 'NGN') return moneyNGN(v);
+  return sym + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 const err = e => String(e?.message || e || 'Request failed').replace('Firebase: ', '').replace(/\(auth\/.*\)/, '').trim();
 const msg = (el, text, cls = '') => { if (!el) return; el.textContent = text; el.className = 'status show ' + cls; };
 
@@ -199,6 +339,12 @@ $('signup').onsubmit = async e => {
   try {
     const cred = await createUserWithEmailAndPassword(auth, email, pass);
     await updateProfile(cred.user, { displayName: name });
+    try {
+      await sendEmailVerification(cred.user);
+      msg($('authmsg'), 'Account created! Check your email for the activation link, then log in.', 'success');
+    } catch (ve) {
+      msg($('authmsg'), 'Account created. Could not send verification email — use Resend on the banner after login.', 'success');
+    }
   } catch (x) { msg($('authmsg'), err(x), 'error'); }
 };
 
@@ -233,7 +379,7 @@ async function ensureProfile(user) {
     dob: signupMeta.dob || '',
     balanceUSD: 0,
     balanceNGN: 0,
-    assets: { USDT: 0, BTC: 0, ETH: 0, BNB: 0, SOL: 0 },
+    assets: { USDT: 0, BTC: 0, ETH: 0, BNB: 0, SOL: 0, LTC: 0, TRX: 0 },
     bonusLockedUSD: 0,
     referralRewardUSD: 0,
     refCode,
@@ -266,7 +412,10 @@ onAuthStateChanged(auth, async u => {
   }
   $('auth').classList.add('hidden');
   $('app').classList.remove('hidden');
+  updateEmailBanner(u);
   page('home');
+  // Ask notification permission once after login
+  maybeRequestNotifications();
   unsub = onSnapshot(doc(db, 'users', u.uid), s => {
     if (s.exists()) { data = s.data(); render(); }
   }, x => toast(err(x)));
@@ -291,8 +440,11 @@ function render() {
   $('pavatar').textContent = (n[0] || 'N').toUpperCase();
 
   const usd = balanceOf('USD');
-  $('bal').textContent = moneyUSD(usd);
-  $('balSub').textContent = '≈ ' + moneyNGN(usd * usdNgn) + ' · USD default';
+  if ($('displayCurrency') && document.activeElement !== $('displayCurrency')) {
+    $('displayCurrency').value = displayCurrency;
+  }
+  $('bal').textContent = formatDisplay(usd);
+  $('balSub').textContent = 'Base wallet: ' + moneyUSD(usd) + ' USD';
   $('bonus').textContent = '$' + Number(data.bonusLockedUSD || 0).toFixed(2) + ' / $5.00';
   $('rb').textContent = '$' + Number(data.bonusLockedUSD || 0).toFixed(2);
   $('rr').textContent = '$' + Number(data.referralRewardUSD || 0).toFixed(2);
@@ -306,9 +458,11 @@ function render() {
     : '⚠️ ' + (data.warning || '');
 
   const a = data.assets || {};
-  $('assets').innerHTML = ['USDT', 'BTC', 'ETH', 'BNB', 'SOL'].map(x =>
-    '<div class="asset row"><span><b>' + x + '</b><small>Crypto</small></span><b>' + Number(a[x] || 0).toFixed(x === 'USDT' ? 2 : 8) + ' ' + x + '</b></div>'
+  $('assets').innerHTML = ['USDT', 'BTC', 'ETH', 'BNB', 'SOL', 'LTC', 'TRX'].map(x =>
+    '<div class="asset row"><span><b>' + x + '</b><small class="asset-usd" data-asset="' + x + '">…</small></span>' +
+    '<b>' + Number(a[x] || 0).toFixed(x === 'USDT' ? 2 : 8) + ' ' + x + '</b></div>'
   ).join('');
+  refreshAssetUsdValues(a);
 
   $('ref').textContent = location.origin + location.pathname + '?ref=' + (data.refCode || me.uid.slice(0, 8));
   updateWithdrawBalance();
@@ -325,6 +479,13 @@ document.addEventListener('click', async e => {
   const nav = e.target.closest('[data-page]');
   if (nav) return page(nav.dataset.page);
   if (e.target.closest('.close')) return closeModal();
+
+  const closePos = e.target.closest('[data-close]');
+  if (closePos) return closePosition(closePos.dataset.close);
+
+  if (e.target.id === 'themeBtn' || e.target.id === 'themeBtn2') return toggleTheme();
+  if (e.target.id === 'resendVerify') return resendVerification();
+  if (e.target.id === 'notifPerm') return requestNotifFromProfile();
 
   const gift = e.target.closest('[data-gift]');
   if (gift) return giftModal(Number(gift.dataset.gift));
@@ -367,7 +528,7 @@ function openFundModal() {
     '<div class="modalhead"><h2>Add money</h2><button class="close">×</button></div>' +
     '<p class="hint">Available in your country (' + esc(country) + '). Amount is in <b>USD</b>.</p>' +
     '<label>Amount (USD)</label>' +
-    '<input id="fa" type="number" inputmode="decimal" min="1" step="0.01" placeholder="10.00">' +
+    '<input id="fa" type="number" inputmode="decimal" min="10" step="0.01" placeholder="10.00">' +
     '<div id="fm" class="status"></div>' +
     btns +
     '<small style="display:block;margin-top:12px">After you pay, your deposit is marked <b>pending</b>. An admin credits your balance after confirming the payment in Paystack / Flutterwave / Kora.</small>'
@@ -408,7 +569,7 @@ async function createPendingDeposit(opts) {
 
 async function startFiatPayment(provider) {
   const amountUSD = Number($('fa').value);
-  if (!(amountUSD >= 1)) return msg($('fm'), 'Minimum $10', 'error');
+  if (!(amountUSD >= MIN_DEPOSIT_USD)) return msg($('fm'), 'Minimum $' + MIN_DEPOSIT_USD, 'error');
   if (data?.status === 'banned') return msg($('fm'), 'Account banned', 'error');
 
   const email = me.email || '';
@@ -515,8 +676,13 @@ async function startFiatPayment(provider) {
   }
 }
 
+function currentDepositAddress() {
+  const net = $('network')?.value || 'bsc';
+  return DEPOSIT_WALLETS[net] || COMPANY_DEPOSIT_ADDRESS;
+}
+
 function renderCryptoMethods() {
-  $('depaddr').textContent = COMPANY_DEPOSIT_ADDRESS;
+  if ($('depaddr')) $('depaddr').textContent = currentDepositAddress();
   const country = (data?.country || 'OTHER').toUpperCase();
   const methods = CRYPTO_BY_COUNTRY[country] || CRYPTO_BY_COUNTRY.OTHER;
   const all = [
@@ -553,14 +719,29 @@ function openCryptoFlow(id) {
       '<p>Google Pay is available via MoonPay or partner on-ramps in supported countries (US, UK, CA, ZA, etc.).</p>' +
       '<a class="primary full" href="https://buy.moonpay.com?apiKey=' + encodeURIComponent(MOONPAY_API_KEY) + '&paymentMethod=google_pay" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none;margin-top:12px">Continue with Google Pay</a>');
   } else if (id === 'trust') {
-    modal('<div class="modalhead"><h2>Trust Wallet</h2><button class="close">×</button></div>' +
-      '<p>1. Open Trust Wallet<br>2. Send USDT / ETH / BNB / SOL to:</p>' +
-      '<div class="ref"><span>' + esc(COMPANY_DEPOSIT_ADDRESS) + '</span><button class="secondary" id="copyTrust">Copy</button></div>' +
-      '<p style="margin-top:12px">3. Come back and submit the transaction hash in the form below.</p>' +
+    const rows = [
+      ['Bitcoin (BTC)', DEPOSIT_WALLETS.bitcoin],
+      ['BNB / BEP20', DEPOSIT_WALLETS.bsc],
+      ['Ethereum / ERC20', DEPOSIT_WALLETS.ethereum],
+      ['Litecoin (LTC)', DEPOSIT_WALLETS.litecoin],
+      ['TRON (TRC20)', DEPOSIT_WALLETS.tron]
+    ].map(function(r) {
+      return '<div style="margin:10px 0"><small style="color:var(--muted)">' + r[0] + '</small>' +
+        '<div class="ref"><span>' + esc(r[1]) + '</span>' +
+        '<button type="button" class="secondary copy-addr" data-addr="' + esc(r[1]) + '">Copy</button></div></div>';
+    }).join('');
+    modal('<div class="modalhead"><h2>Trust Wallet deposit</h2><button class="close">×</button></div>' +
+      '<p>Send only on the matching network. Minimum <b>$' + MIN_DEPOSIT_USD + '</b> equivalent.</p>' +
+      rows +
+      '<p style="margin-top:12px">After sending, submit the TX hash in the form below for review.</p>' +
       '<button class="primary full close">Got it</button>');
-    setTimeout(() => {
-      const b = document.getElementById('copyTrust');
-      if (b) b.onclick = () => { navigator.clipboard.writeText(COMPANY_DEPOSIT_ADDRESS); toast('Copied'); };
+    setTimeout(function() {
+      document.querySelectorAll('.copy-addr').forEach(function(b) {
+        b.onclick = function() {
+          navigator.clipboard.writeText(b.dataset.addr);
+          toast('Address copied');
+        };
+      });
     }, 50);
   } else {
     toast('Scroll down to submit your on-chain deposit');
@@ -568,9 +749,16 @@ function openCryptoFlow(id) {
 }
 
 $('copyaddr').onclick = () => {
-  navigator.clipboard.writeText($('depaddr').textContent);
+  navigator.clipboard.writeText(currentDepositAddress());
   toast('Address copied');
 };
+// Switch deposit address when network changes
+document.addEventListener('change', e => {
+  if (e.target && e.target.id === 'network' && $('depaddr')) {
+    $('depaddr').textContent = currentDepositAddress();
+  }
+});
+
 
 $('verify').onclick = async () => {
   const network = $('network').value;
@@ -578,11 +766,14 @@ $('verify').onclick = async () => {
   const txHash = $('tx').value.trim();
   if (!address || !txHash) return msg($('dmsg'), 'Enter sending address and TX hash', 'error');
   try {
+    const toAddr = currentDepositAddress();
     await addDoc(collection(db, 'blockchainDeposits'), {
       uid: me.uid,
       network,
       fromAddress: address,
+      toAddress: toAddr,
       txHash,
+      minUSD: MIN_DEPOSIT_USD,
       status: 'pending_review',
       createdAt: serverTimestamp()
     });
@@ -590,12 +781,13 @@ $('verify').onclick = async () => {
       uid: me.uid,
       type: 'blockchain_deposit',
       status: 'pending_review',
-      amountDisplay: 'Pending review',
+      amountDisplay: 'Pending review (min $' + MIN_DEPOSIT_USD + ')',
       network,
       txHash,
+      toAddress: toAddr,
       createdAt: serverTimestamp()
     });
-    msg($('dmsg'), 'Deposit submitted. It will be credited after review.', 'success');
+    msg($('dmsg'), 'Deposit submitted (min $' + MIN_DEPOSIT_USD + '). Admin credits after confirming on-chain.', 'success');
   } catch (x) { msg($('dmsg'), err(x), 'error'); }
 };
 
@@ -762,6 +954,7 @@ async function startTrade() {
   $('priceChange').textContent = '';
   $('trademsg').className = 'status';
   loadOrders();
+  loadOpenPositions();
 
   try {
     const [klinesRes, tickerRes] = await Promise.all([
@@ -797,6 +990,7 @@ async function startTrade() {
       series = series.slice(-100);
     }
     draw();
+    if (Math.random() < 0.15) loadOpenPositions(); // light refresh of PnL
   };
   socket.onclose = () => {
     if (ws === socket) {
@@ -851,6 +1045,10 @@ function draw() {
   });
   $('obMid').textContent = '$' + lastPrice.toLocaleString(undefined, { maximumFractionDigits: 2 });
   tradeEstimate();
+  // Live PnL on open cards for current pair
+  document.querySelectorAll('.position-card').forEach(card => {
+    /* refreshed fully periodically via loadOpenPositions */
+  });
 }
 
 async function renderOrderBook(sym) {
@@ -876,80 +1074,186 @@ function setSide(s) {
   side = s;
   $('buy').classList.toggle('active', s === 'buy');
   $('sell').classList.toggle('active', s === 'sell');
-  $('tradelabel').textContent = s === 'buy' ? 'USDT to spend' : $('pair').value + ' to sell';
+  $('tradelabel').textContent = 'Margin (USDT)';
   tradeEstimate();
 }
 $('buy').onclick = () => setSide('buy');
 $('sell').onclick = () => setSide('sell');
 
-function estimate() {
-  const amt = Number($('tradeamt').value);
-  if (!(amt > 0) || !lastPrice) return 0;
-  const k = 1 - PLATFORM_FEE_PCT / 100;
-  return side === 'buy' ? (amt * k) / lastPrice : amt * lastPrice * k;
-}
-
 function tradeEstimate() {
-  const est = estimate();
-  const sym = $('pair').value;
-  const have = side === 'buy' ? balanceOf('USDT') : balanceOf(sym);
-  let t = 'Available: ' + have.toFixed(side === 'buy' ? 2 : 8) + ' ' + (side === 'buy' ? 'USDT' : sym);
-  if (est) t += ' · You get ≈ ' + est.toFixed(side === 'buy' ? 8 : 2) + ' ' + (side === 'buy' ? sym : 'USDT');
-  if (lastPrice) t += ' · Fee ' + PLATFORM_FEE_PCT + '%';
+  const margin = Number($('tradeamt').value);
+  const lev = Number($('leverage')?.value || 1);
+  const have = balanceOf('USDT');
+  let t = 'Available USDT: ' + have.toFixed(2);
+  if (margin > 0 && lastPrice) {
+    const notional = margin * lev;
+    const units = notional / lastPrice;
+    t += ' · Position ≈ ' + units.toFixed(6) + ' ' + $('pair').value;
+    t += ' · Notional $' + notional.toFixed(2) + ' (' + lev + 'x)';
+    t += ' · Fee ' + PLATFORM_FEE_PCT + '% on close';
+  }
   $('tradeinfo').textContent = t;
 }
 $('tradeamt').oninput = tradeEstimate;
+$('leverage') && ($('leverage').onchange = tradeEstimate);
 
 $('tradebtn').onclick = async () => {
   try {
     if (data?.status === 'banned') throw new Error('Account banned');
-    const amt = Number($('tradeamt').value);
-    if (!(amt > 0)) throw new Error('Enter a valid amount');
+    if (me && !me.emailVerified && me.providerData?.some(p => p.providerId === 'password')) {
+      throw new Error('Verify your email before trading');
+    }
+    const margin = Number($('tradeamt').value);
+    const lev = Number($('leverage')?.value || 1);
+    if (!(margin > 0)) throw new Error('Enter margin amount');
     if (!lastPrice) throw new Error('Waiting for live price…');
+    if (balanceOf('USDT') < margin) throw new Error('Insufficient USDT margin');
 
     const sym = $('pair').value;
-    const receive = estimate();
+    const notional = margin * lev;
+    const units = notional / lastPrice;
 
-    if (side === 'buy') {
-      if (balanceOf('USDT') < amt) throw new Error('Insufficient USDT');
-      await updateDoc(doc(db, 'users', me.uid), {
-        'assets.USDT': increment(-amt),
-        ['assets.' + sym]: increment(receive),
-        updatedAt: serverTimestamp()
-      });
-    } else {
-      if (balanceOf(sym) < amt) throw new Error('Insufficient ' + sym);
-      await updateDoc(doc(db, 'users', me.uid), {
-        ['assets.' + sym]: increment(-amt),
-        'assets.USDT': increment(receive),
-        updatedAt: serverTimestamp()
-      });
-    }
+    // Lock margin from USDT
+    await updateDoc(doc(db, 'users', me.uid), {
+      'assets.USDT': increment(-margin),
+      updatedAt: serverTimestamp()
+    });
 
-    await addDoc(collection(db, 'transactions'), {
+    const posRef = await addDoc(collection(db, 'positions'), {
       uid: me.uid,
-      type: side === 'buy' ? 'trade_buy' : 'trade_sell',
-      status: 'filled',
       symbol: sym,
-      side,
-      amount: amt,
-      price: lastPrice,
-      receive,
-      feePct: PLATFORM_FEE_PCT,
-      amountDisplay: side === 'buy'
-        ? '+' + receive.toFixed(8) + ' ' + sym
-        : '+' + receive.toFixed(2) + ' USDT',
+      side: side, // buy = long, sell = short
+      margin,
+      leverage: lev,
+      units,
+      openPrice: lastPrice,
+      notional,
+      status: 'open',
       createdAt: serverTimestamp()
     });
 
-    msg($('trademsg'), 'Filled @ $' + lastPrice.toLocaleString() + '. You received ' + receive.toFixed(side === 'buy' ? 8 : 2) + ' ' + (side === 'buy' ? sym : 'USDT'), 'success');
+    await addDoc(collection(db, 'transactions'), {
+      uid: me.uid,
+      type: side === 'buy' ? 'position_open_long' : 'position_open_short',
+      status: 'open',
+      symbol: sym,
+      side,
+      amount: margin,
+      price: lastPrice,
+      units,
+      leverage: lev,
+      positionId: posRef.id,
+      amountDisplay: 'Open ' + side.toUpperCase() + ' ' + units.toFixed(6) + ' ' + sym + ' @ $' + lastPrice.toFixed(2),
+      createdAt: serverTimestamp()
+    });
+
+    msg($('trademsg'), (side === 'buy' ? 'LONG' : 'SHORT') + ' opened @ $' + lastPrice.toLocaleString() + ' · margin $' + margin.toFixed(2), 'success');
+    pushLocalNotif('Position opened', sym + ' ' + side.toUpperCase() + ' @ $' + lastPrice.toFixed(2));
     $('tradeamt').value = '';
     tradeEstimate();
+    loadOpenPositions();
     loadOrders();
   } catch (x) {
     msg($('trademsg'), err(x), 'error');
   }
 };
+
+async function loadOpenPositions() {
+  const el = $('openPositions');
+  if (!el || !me) return;
+  try {
+    const s = await getDocs(query(
+      collection(db, 'positions'),
+      where('uid', '==', me.uid),
+      where('status', '==', 'open'),
+      limit(30)
+    ));
+    if (s.empty) {
+      el.innerHTML = '<p style="color:var(--muted)">No open positions.</p>';
+      return;
+    }
+    const rows = s.docs.map(d => ({ id: d.id, ...d.data() }));
+    el.innerHTML = rows.map(p => {
+      const price = lastPrice && p.symbol === $('pair').value ? lastPrice : (p.openPrice || 0);
+      const pnl = p.side === 'buy'
+        ? (price - p.openPrice) * p.units
+        : (p.openPrice - price) * p.units;
+      const pnlCls = pnl >= 0 ? 'pnl-pos' : 'pnl-neg';
+      const pnlStr = (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + ' USDT';
+      return '<div class="position-card" data-pos="' + p.id + '">' +
+        '<div class="pos-row"><b>' + esc((p.side === 'buy' ? 'LONG' : 'SHORT')) + ' ' + esc(p.symbol) + '</b><span class="' + pnlCls + '">' + pnlStr + '</span></div>' +
+        '<div class="pos-row"><span>Open</span><span>$' + Number(p.openPrice).toFixed(2) + '</span></div>' +
+        '<div class="pos-row"><span>Size</span><span>' + Number(p.units).toFixed(6) + ' · ' + p.leverage + 'x · margin $' + Number(p.margin).toFixed(2) + '</span></div>' +
+        '<button type="button" class="close-pos" data-close="' + p.id + '">Close position</button>' +
+      '</div>';
+    }).join('');
+  } catch (x) {
+    el.innerHTML = '<p style="color:var(--muted)">Could not load positions. Create a Firestore index on positions (uid + status) if prompted.</p>';
+  }
+}
+
+async function closePosition(posId) {
+  try {
+    const pref = doc(db, 'positions', posId);
+    const snap = await getDoc(pref);
+    if (!snap.exists()) throw new Error('Position not found');
+    const p = snap.data();
+    if (p.uid !== me.uid) throw new Error('Not your position');
+    if (p.status !== 'open') throw new Error('Already closed');
+
+    // Prefer live price for this symbol
+    let price = lastPrice;
+    if (p.symbol !== $('pair').value || !price) {
+      price = await livePrice(p.symbol);
+    }
+    const rawPnl = p.side === 'buy'
+      ? (price - p.openPrice) * p.units
+      : (p.openPrice - price) * p.units;
+    const fee = Math.abs(p.notional || (p.margin * p.leverage)) * (PLATFORM_FEE_PCT / 100);
+    const pnl = rawPnl - fee;
+    const returnUsdt = Number(p.margin) + pnl;
+
+    await updateDoc(pref, {
+      status: 'closed',
+      closePrice: price,
+      pnl,
+      fee,
+      closedAt: serverTimestamp()
+    });
+
+    // Return margin + pnl to USDT (floor at 0 if wiped out)
+    const credit = Math.max(0, returnUsdt);
+    await updateDoc(doc(db, 'users', me.uid), {
+      'assets.USDT': increment(credit),
+      updatedAt: serverTimestamp()
+    });
+
+    await addDoc(collection(db, 'transactions'), {
+      uid: me.uid,
+      type: 'position_close',
+      status: 'closed',
+      symbol: p.symbol,
+      side: p.side,
+      price,
+      openPrice: p.openPrice,
+      pnl,
+      fee,
+      positionId: posId,
+      amountDisplay: 'Close ' + (p.side === 'buy' ? 'LONG' : 'SHORT') + ' ' + p.symbol + ' PnL ' + (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + ' USDT',
+      createdAt: serverTimestamp()
+    });
+
+    toast('Position closed · PnL ' + (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + ' USDT');
+    pushLocalNotif('Position closed', p.symbol + ' PnL ' + pnl.toFixed(2) + ' USDT');
+    loadOpenPositions();
+    loadOrders();
+  } catch (x) {
+    toast(err(x));
+  }
+}
+
+// Refresh open positions PnL when price updates
+const _origDraw = typeof draw === 'function' ? null : null;
 
 async function loadOrders() {
   if (!me) return;
@@ -960,7 +1264,7 @@ async function loadOrders() {
       orderBy('createdAt', 'desc'),
       limit(50)
     ));
-    const rows = s.docs.map(d => d.data()).filter(x => String(x.type).startsWith('trade_')).slice(0, 12);
+    const rows = s.docs.map(d => d.data()).filter(x => /trade_|position_/.test(String(x.type))).slice(0, 15);
     $('orders').innerHTML = rows.map(x =>
       '<div class="row"><span><b>' + esc(String(x.type).replace('trade_', '').toUpperCase()) + ' ' + esc(x.symbol || '') +
       '</b><small> ' + esc(x.status) + '</small></span><b>' + esc(x.amountDisplay) + '</b></div>'
@@ -1059,66 +1363,112 @@ function formatAmt(n, asset) {
 }
 
 const WD_NETS = {
-  USD: ['Bank transfer (USD)', 'PayPal'],
-  NGN: ['Bank transfer (NGN)'],
   USDT: ['ERC20', 'BEP20', 'Polygon', 'TRC20'],
   BTC: ['Bitcoin'],
   ETH: ['Ethereum'],
   BNB: ['BNB Smart Chain'],
-  SOL: ['Solana']
+  SOL: ['Solana'],
+  LTC: ['Litecoin'],
+  TRX: ['TRON (TRC20)']
 };
 
 function fillNetworks() {
+  if (!$('wa')) return;
   const a = $('wa').value;
-  $('wn').innerHTML = (WD_NETS[a] || ['Other']).map(n => '<option>' + n + '</option>').join('');
-  $('wdlabel').textContent = (a === 'USD' || a === 'NGN')
-    ? 'Bank / account details'
-    : 'Wallet address';
+  if ($('wn')) $('wn').innerHTML = (WD_NETS[a] || ['Other']).map(n => '<option>' + n + '</option>').join('');
   updateWithdrawBalance();
 }
 function updateWithdrawBalance() {
-  if (data) $('wbal').textContent = '(available ' + formatAmt(balanceOf($('wa').value), $('wa').value) + ' ' + $('wa').value + ')';
+  if (!data || !$('wbal')) return;
+  const wtype = $('wtype')?.value || 'crypto';
+  if (wtype === 'giftcard') {
+    $('wbal').textContent = '(available ' + moneyUSD(balanceOf('USD')) + ' USD)';
+  } else {
+    const a = $('wa')?.value || 'USDT';
+    // show USDT balance as margin currency; for other assets show asset bal
+    const bal = a === 'USDT' ? balanceOf('USDT') : balanceOf(a);
+    $('wbal').textContent = '(available ' + formatAmt(bal, a) + ' ' + a + ')';
+  }
 }
-$('wa').onchange = fillNetworks;
+$('wa') && ($('wa').onchange = fillNetworks);
 
 $('withdrawBtn').onclick = async () => {
   try {
-    const asset = $('wa').value;
-    const amount = Number($('wam').value);
-    const dest = $('wd').value.trim();
-    if (!(amount > 0)) throw new Error('Enter amount');
-    if (!dest) throw new Error('Enter destination');
-    if (balanceOf(asset) < amount) throw new Error('Insufficient ' + asset);
-    const usdVal = await assetToUSD(asset, amount);
-    if (usdVal < 10) throw new Error('Minimum withdrawal is $10 equivalent');
+    const wtype = $('wtype')?.value || 'crypto';
+    const amountUSD = Number($('wam').value);
+    if (!(amountUSD >= 10)) throw new Error('Minimum withdrawal is $10');
+    const pass = $('wp')?.value || '';
 
-    const updates = { updatedAt: serverTimestamp() };
-    if (asset === 'USD') updates.balanceUSD = increment(-amount);
-    else if (asset === 'NGN') updates.balanceNGN = increment(-amount);
-    else updates['assets.' + asset] = increment(-amount);
-
-    await updateDoc(doc(db, 'users', me.uid), updates);
-    const wRef = await addDoc(collection(db, 'withdrawals'), {
-      uid: me.uid,
-      asset,
-      network: $('wn').value,
-      amount,
-      destination: dest,
-      status: 'pending_review',
-      createdAt: serverTimestamp()
-    });
-    await addDoc(collection(db, 'transactions'), {
-      uid: me.uid,
-      type: 'withdrawal',
-      status: 'pending_review',
-      amount,
-      asset,
-      amountDisplay: '-' + formatAmt(amount, asset) + ' ' + asset,
-      withdrawalId: wRef.id,
-      createdAt: serverTimestamp()
-    });
-    $('wp').value = '';
-    msg($('wmsg'), 'Withdrawal submitted (ref ' + wRef.id.slice(0, 8) + '…). Amount on hold until processed.', 'success');
+    if (wtype === 'crypto') {
+      const asset = $('wa').value;
+      const dest = $('wd').value.trim();
+      if (!dest) throw new Error('Enter wallet address');
+      // Debit from USDT or the crypto asset
+      let debitAsset = asset;
+      let debitAmt = amountUSD;
+      if (asset === 'USDT') {
+        if (balanceOf('USDT') < amountUSD) throw new Error('Insufficient USDT');
+      } else {
+        const price = await livePrice(asset);
+        debitAmt = amountUSD / price;
+        if (balanceOf(asset) < debitAmt) throw new Error('Insufficient ' + asset);
+      }
+      const updates = { updatedAt: serverTimestamp() };
+      updates['assets.' + debitAsset] = increment(-debitAmt);
+      await updateDoc(doc(db, 'users', me.uid), updates);
+      const wRef = await addDoc(collection(db, 'withdrawals'), {
+        uid: me.uid,
+        type: 'crypto',
+        asset,
+        network: $('wn').value,
+        amountUSD,
+        amountAsset: debitAmt,
+        destination: dest,
+        status: 'pending_review',
+        createdAt: serverTimestamp()
+      });
+      await addDoc(collection(db, 'transactions'), {
+        uid: me.uid,
+        type: 'withdrawal_crypto',
+        status: 'pending_review',
+        amountUSD,
+        asset,
+        amountDisplay: '-' + moneyUSD(amountUSD) + ' (' + asset + ')',
+        withdrawalId: wRef.id,
+        createdAt: serverTimestamp()
+      });
+      msg($('wmsg'), 'Crypto withdrawal submitted (ref ' + wRef.id.slice(0, 8) + '…). Pending review.', 'success');
+    } else {
+      // Gift card withdrawal
+      if (balanceOf('USD') < amountUSD) throw new Error('Insufficient USD balance');
+      const brand = $('wGiftBrand').value;
+      const email = ($('wGiftEmail').value || me.email || '').trim();
+      if (!email) throw new Error('Enter delivery email');
+      await updateDoc(doc(db, 'users', me.uid), {
+        balanceUSD: increment(-amountUSD),
+        updatedAt: serverTimestamp()
+      });
+      const wRef = await addDoc(collection(db, 'withdrawals'), {
+        uid: me.uid,
+        type: 'giftcard',
+        brand,
+        email,
+        amountUSD,
+        status: 'pending_review',
+        createdAt: serverTimestamp()
+      });
+      await addDoc(collection(db, 'transactions'), {
+        uid: me.uid,
+        type: 'withdrawal_giftcard',
+        status: 'pending_review',
+        amountUSD,
+        amountDisplay: '-' + moneyUSD(amountUSD) + ' gift card (' + brand + ')',
+        withdrawalId: wRef.id,
+        createdAt: serverTimestamp()
+      });
+      msg($('wmsg'), 'Gift card withdrawal submitted. Code delivered after fulfilment.', 'success');
+    }
+    if ($('wp')) $('wp').value = '';
   } catch (x) {
     msg($('wmsg'), err(x), 'error');
   }
@@ -1221,31 +1571,155 @@ async function loadPendingDeposits() {
   }
 }
 
+let historyCache = [];
+let histFilter = 'all';
+
+function histCategory(type) {
+  const t = String(type || '').toLowerCase();
+  if (t.includes('deposit') || t.includes('blockchain')) return 'deposit';
+  if (t.includes('position') || t.includes('trade')) return 'trade';
+  if (t.includes('withdraw')) return 'withdrawal';
+  if (t.includes('gift') || t.includes('marketplace') || t.includes('order')) return 'order';
+  if (t.includes('swap')) return 'swap';
+  return 'other';
+}
+
+function histIcon(type) {
+  const c = histCategory(type);
+  return ({ deposit: '⬇️', trade: '📈', withdrawal: '⬆️', order: '🛍️', swap: '🔄', other: '📄' })[c] || '📄';
+}
+
+function histTitle(type) {
+  return String(type || 'transaction').replace(/_/g, ' ');
+}
+
+function histAmtClass(x) {
+  const d = String(x.amountDisplay || '');
+  const t = String(x.type || '');
+  if (d.startsWith('+') || t.includes('deposit') && !t.includes('pending')) return 'in';
+  if (d.startsWith('-') || t.includes('withdraw') || t.includes('purchase') || t.includes('order')) return 'out';
+  if (t.includes('position_close') || t.includes('pnl')) {
+    if (Number(x.pnl) > 0) return 'in';
+    if (Number(x.pnl) < 0) return 'out';
+  }
+  if (t.includes('position_open')) return 'out';
+  return 'neutral';
+}
+
+function renderHistoryList() {
+  const list = $('historyList');
+  const sum = $('histSummary');
+  if (!list) return;
+
+  let rows = historyCache;
+  if (histFilter !== 'all') {
+    rows = historyCache.filter(x => histCategory(x.type) === histFilter);
+  }
+
+  // Summary from full cache
+  let inSum = 0, outSum = 0;
+  historyCache.forEach(x => {
+    const n = Number(x.amountUSD);
+    if (Number.isFinite(n)) {
+      if (n > 0) inSum += n;
+      else if (n < 0) outSum += Math.abs(n);
+    }
+  });
+  if (sum) {
+    sum.innerHTML =
+      '<div class="hist-sum-card"><small>Total in (logged)</small><b class="tx-amt in">' + moneyUSD(inSum) + '</b></div>' +
+      '<div class="hist-sum-card"><small>Total out (logged)</small><b class="tx-amt out">' + moneyUSD(outSum) + '</b></div>';
+  }
+
+  if (!rows.length) {
+    list.innerHTML = '<p class="muted">No transactions in this category yet.</p>';
+    return;
+  }
+
+  list.innerHTML = rows.map(x => {
+    const when = x.createdAt && x.createdAt.toDate ? x.createdAt.toDate().toLocaleString() : (x._when || '');
+    const st = String(x.status || '');
+    let badge = '';
+    if (st === 'pending_review' || st === 'pending_fulfilment' || st === 'open')
+      badge = '<span class="badge badge-pending">' + esc(st.replace(/_/g, ' ')) + '</span>';
+    else if (st === 'completed' || st === 'filled' || st === 'closed')
+      badge = '<span class="badge badge-completed">' + esc(st) + '</span>';
+    else if (st === 'failed' || st === 'rejected')
+      badge = '<span class="badge badge-failed">' + esc(st) + '</span>';
+    else if (st)
+      badge = '<span class="badge">' + esc(st) + '</span>';
+
+    const amt = x.amountDisplay || (x.amountUSD != null ? moneyUSD(x.amountUSD) : '—');
+    const cls = histAmtClass(x);
+    const extra = [];
+    if (x.reference) extra.push('Ref ' + x.reference);
+    if (x.symbol) extra.push(x.symbol);
+    if (x.network) extra.push(x.network);
+    if (x.provider) extra.push(x.provider);
+
+    return '<div class="tx-item">' +
+      '<div class="tx-icon">' + histIcon(x.type) + '</div>' +
+      '<div class="tx-body"><b>' + esc(histTitle(x.type)) + '</b>' + badge +
+      '<small>' + esc(when) + (extra.length ? ' · ' + esc(extra.join(' · ')) : '') + '</small></div>' +
+      '<div class="tx-right"><span class="tx-amt ' + cls + '">' + esc(amt) + '</span></div>' +
+    '</div>';
+  }).join('');
+}
+
 async function loadHistory() {
+  const list = $('historyList');
+  if (list) list.innerHTML = '<p class="muted">Loading history…</p>';
+  histFilter = 'all';
+  document.querySelectorAll('.hist-filter').forEach(b => {
+    b.classList.toggle('active', b.dataset.hfilter === 'all');
+  });
+
   try {
-    const s = await getDocs(query(
-      collection(db, 'transactions'),
-      where('uid', '==', me.uid),
-      orderBy('createdAt', 'desc'),
-      limit(80)
-    ));
-    $('historyList').innerHTML = s.docs.map(d => {
+    let docs = [];
+    try {
+      const s = await getDocs(query(
+        collection(db, 'transactions'),
+        where('uid', '==', me.uid),
+        orderBy('createdAt', 'desc'),
+        limit(120)
+      ));
+      docs = s.docs;
+    } catch (idxErr) {
+      // Fallback without orderBy if composite index missing
+      const s = await getDocs(query(
+        collection(db, 'transactions'),
+        where('uid', '==', me.uid),
+        limit(120)
+      ));
+      docs = s.docs.slice().sort((a, b) => {
+        const ta = a.data().createdAt?.toMillis?.() || 0;
+        const tb = b.data().createdAt?.toMillis?.() || 0;
+        return tb - ta;
+      });
+    }
+
+    historyCache = docs.map(d => {
       const x = d.data();
-      const when = x.createdAt && x.createdAt.toDate ? x.createdAt.toDate().toLocaleString() : '';
-      const st = String(x.status || '');
-      let badge = '';
-      if (st === 'pending_review' || st === 'pending_fulfilment') badge = '<span class="badge badge-pending">' + esc(st.replace(/_/g, ' ')) + '</span>';
-      else if (st === 'completed' || st === 'filled') badge = '<span class="badge badge-completed">' + esc(st) + '</span>';
-      else if (st === 'failed' || st === 'rejected') badge = '<span class="badge badge-failed">' + esc(st) + '</span>';
-      else if (st) badge = '<span class="badge">' + esc(st) + '</span>';
-      return '<div class="row"><span><b>' + esc(String(x.type).replace(/_/g, ' ')) +
-        '</b>' + badge + '<small> ' + esc(when) + '</small></span><b>' +
-        esc(x.amountDisplay || '') + '</b></div>';
-    }).join('') || '<p>No transactions yet.</p>';
+      x._id = d.id;
+      return x;
+    });
+    renderHistoryList();
   } catch (x) {
-    $('historyList').innerHTML = '<p>No transactions yet. (Create a Firestore composite index on transactions: uid ASC, createdAt DESC if prompted.)</p>';
+    if (list) {
+      list.innerHTML = '<p class="muted">Could not load history. In Firebase Console create an index on <b>transactions</b>: uid ASC, createdAt DESC.</p><p class="muted">' + esc(err(x)) + '</p>';
+    }
   }
 }
+
+// History filter clicks
+document.addEventListener('click', e => {
+  const f = e.target.closest('.hist-filter');
+  if (!f) return;
+  histFilter = f.dataset.hfilter || 'all';
+  document.querySelectorAll('.hist-filter').forEach(b => b.classList.toggle('active', b === f));
+  renderHistoryList();
+});
+
 
 $('bell').onclick = async () => {
   modal('<div class="modalhead"><h2>Notifications</h2><button class="close">×</button></div><div id="notes">Loading…</div>');
@@ -1306,3 +1780,19 @@ function careReply(q) {
   if (q.includes('currency') || q.includes('usd') || q.includes('balance')) return 'Your main balance is in USD by default. You can also hold NGN and crypto (USDT, BTC, ETH, BNB, SOL).';
   return 'For account-specific help, use the support links below. Never share your password, seed phrase or private key.';
 }
+
+
+// Display currency selector
+document.addEventListener('change', e => {
+  if (e.target && e.target.id === 'displayCurrency') {
+    displayCurrency = e.target.value;
+    localStorage.setItem('np_currency', displayCurrency);
+    if (data) render();
+  }
+  if (e.target && e.target.id === 'wtype') {
+    const crypto = e.target.value === 'crypto';
+    $('wCryptoFields')?.classList.toggle('hidden', !crypto);
+    $('wGiftFields')?.classList.toggle('hidden', crypto);
+    fillNetworks();
+  }
+});
