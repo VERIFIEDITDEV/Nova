@@ -25,7 +25,7 @@ const firebaseConfig = {
 };
 
 // Public keys only (never put secret keys in the browser)
-const PAYSTACK_PUBLIC_KEY = 'pk_test_REPLACE_ME';
+const PAYSTACK_PUBLIC_KEY = 'pk_live_725e9c0357625ec847ec27b37e4d1033ac90a718';
 const FLW_PUBLIC_KEY = 'FLWPUBK_TEST_REPLACE_ME';
 const KORA_PUBLIC_KEY = 'pk_test_kora_REPLACE_ME';
 const MOONPAY_API_KEY = 'pk_test_moonpay_REPLACE_ME';
