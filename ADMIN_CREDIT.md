@@ -98,3 +98,26 @@ Collection **`orders`**, status `pending_fulfilment`:
 
 On Spark, a technical user could still try to raise their own `balanceUSD` in the client.
 For higher security later, move credits to Cloud Functions (Blaze) or an external Worker that only the admin/webhook can call.
+
+
+## Unified cash (USD + USDT) — important
+
+Cash is **one pool**:
+- `balanceUSD` + `assets.USDT` are treated as the **same money** (1:1).
+- The app shows **Cash (USD/USDT)** = sum of both.
+- Trading, gifts, and USDT withdrawals debit this combined cash.
+- **Always credit new deposits to `balanceUSD` only** (leave `assets.USDT` at 0 unless the user already had USDT).
+
+### Fiat / card deposit credit
+```
+users/{uid}.balanceUSD  →  old + amount
+```
+
+### Crypto deposit credit
+- If they sent **USDT**: add to `balanceUSD` (same as cash)
+- If they sent **BTC / ETH / BNB / LTC / TRX**: add to `assets.BTC` (etc.) only  
+  Do **not** also add the USD value to `balanceUSD` (that would double-count).
+
+### Check
+Home → Cash should equal balanceUSD + assets.USDT  
+Portfolio ≈ Cash + (crypto × live price)
