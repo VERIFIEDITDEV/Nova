@@ -540,3 +540,6 @@ body.has-email-banner .app { padding-top: 48px; }
 .muted{color:var(--muted);padding:8px 0}
 html[data-theme="dark"] .hist-filter{background:var(--card)}
 html[data-theme="dark"] .hist-sum-card{background:#15121f}
+
+.cash-row{background:var(--purple-soft);border-radius:12px;padding:10px 12px;margin-bottom:6px}
+.cash-row b{color:var(--purple)}

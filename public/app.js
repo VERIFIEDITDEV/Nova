@@ -25,7 +25,7 @@ const firebaseConfig = {
 };
 
 // Public keys only (never put secret keys in the browser)
-const PAYSTACK_PUBLIC_KEY = 'pk_live_725e9c0357625ec847ec27b37e4d1033ac90a718';
+const PAYSTACK_PUBLIC_KEY = 'pk_test_REPLACE_ME';
 const FLW_PUBLIC_KEY = 'FLWPUBK_TEST_REPLACE_ME';
 const KORA_PUBLIC_KEY = 'pk_test_kora_REPLACE_ME';
 const MOONPAY_API_KEY = 'pk_test_moonpay_REPLACE_ME';
@@ -216,18 +216,19 @@ const moneyUSD = n => new Intl.NumberFormat('en-US', { style: 'currency', curren
 const moneyNGN = n => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN' }).format(Number(n || 0));
 async function refreshAssetUsdValues(assets) {
   const list = assets || (data && data.assets) || {};
-  for (const x of ['USDT', 'BTC', 'ETH', 'BNB', 'SOL', 'LTC', 'TRX']) {
+  for (const x of ['BTC', 'ETH', 'BNB', 'SOL', 'LTC', 'TRX']) {
     const el = document.querySelector('.asset-usd[data-asset="' + x + '"]');
     if (!el) continue;
     const qty = Number(list[x] || 0);
     try {
-      const px = x === 'USDT' ? 1 : await livePrice(x);
-      const usd = qty * px;
-      el.textContent = '≈ ' + moneyUSD(usd);
+      const px = await livePrice(x);
+      el.textContent = '≈ ' + moneyUSD(qty * px);
     } catch (_) {
       el.textContent = '';
     }
   }
+  // Keep main balance in sync with crypto USD values
+  updateMainBalanceFromPortfolio();
 }
 
 function formatDisplay(usdAmount) {
@@ -260,14 +261,82 @@ try {
   if (r) localStorage.setItem('np_ref', r.slice(0, 16));
 } catch (_) {}
 
+/**
+ * Unified balances (no double-counting):
+ * - Cash = balanceUSD + assets.USDT (1:1). Both are the same liquid money.
+ * - Crypto (BTC, ETH, …) stay separate and convert at live rates for portfolio.
+ * - balanceOf('USD') and balanceOf('USDT') both return total cash.
+ */
 const balanceOf = a => {
   if (!data) return 0;
-  if (a === 'USD') return Number(data.balanceUSD || 0);
   if (a === 'NGN') return Number(data.balanceNGN || 0);
+  if (a === 'USD' || a === 'USDT') {
+    return Number(data.balanceUSD || 0) + Number(data.assets?.USDT || 0);
+  }
   return Number(data.assets?.[a] || 0);
 };
 
+/** Debit cash (USD wallet first, then USDT). Returns Firestore update fields. */
+function debitCashUpdates(amount) {
+  const need = Number(amount);
+  if (!(need > 0)) return {};
+  const usd = Number(data.balanceUSD || 0);
+  const usdt = Number(data.assets?.USDT || 0);
+  if (usd + usdt + 1e-10 < need) throw new Error('Insufficient cash balance');
+  const fromUsd = Math.min(usd, need);
+  const fromUsdt = need - fromUsd;
+  const u = {};
+  if (fromUsd > 0) u.balanceUSD = increment(-fromUsd);
+  if (fromUsdt > 0) u['assets.USDT'] = increment(-fromUsdt);
+  return u;
+}
+
+/** Credit cash always into balanceUSD (single source of truth for new funds). */
+function creditCashUpdates(amount) {
+  const n = Number(amount);
+  if (!(n > 0)) return {};
+  return { balanceUSD: increment(n) };
+}
+
+
+/** Main balance = cash + all crypto at live USD rates (affects the big number). */
+async function updateMainBalanceFromPortfolio(cashHint) {
+  const cash = cashHint != null ? cashHint : balanceOf('USD');
+  try {
+    const equity = await portfolioUSD();
+    if (!data || !$('bal')) return;
+    $('bal').textContent = formatDisplay(equity);
+    const cryptoPart = Math.max(0, equity - cash);
+    $('balSub').textContent =
+      'Cash: ' + moneyUSD(cash) +
+      (cryptoPart > 0.0001 ? ' · Crypto ≈ ' + moneyUSD(cryptoPart) : '') +
+      ' · Total equity';
+  } catch (_) {
+    if ($('balSub')) $('balSub').textContent = 'Cash: ' + moneyUSD(cash);
+  }
+}
+
+/** Portfolio equity in USD: cash + every crypto at live mid (USDT already in cash). */
+async function portfolioUSD() {
+  let total = balanceOf('USD');
+  const a = data?.assets || {};
+  for (const coin of ['BTC', 'ETH', 'BNB', 'SOL', 'LTC', 'TRX']) {
+    const qty = Number(a[coin] || 0);
+    if (qty <= 0) continue;
+    try {
+      total += qty * (await livePrice(coin));
+    } catch (_) {}
+  }
+  return total;
+}
+
+
+let portfolioRefreshTimer = null;
 function page(p) {
+  if (portfolioRefreshTimer) { clearInterval(portfolioRefreshTimer); portfolioRefreshTimer = null; }
+  if (p === 'home') {
+    portfolioRefreshTimer = setInterval(() => { if (data) updateMainBalanceFromPortfolio(); }, 30000);
+  }
   document.querySelectorAll('.page').forEach(x => x.classList.toggle('active', x.id === p));
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.page === p));
   if (p !== 'trade') stopFeed();
@@ -379,7 +448,7 @@ async function ensureProfile(user) {
     dob: signupMeta.dob || '',
     balanceUSD: 0,
     balanceNGN: 0,
-    assets: { USDT: 0, BTC: 0, ETH: 0, BNB: 0, SOL: 0, LTC: 0, TRX: 0 },
+    assets: { USDT: 0, BTC: 0, ETH: 0, BNB: 0, SOL: 0, LTC: 0, TRX: 0 }, // USDT is folded into cash with balanceUSD (1:1)
     bonusLockedUSD: 0,
     referralRewardUSD: 0,
     refCode,
@@ -439,12 +508,14 @@ function render() {
   $('avatar').textContent = (n[0] || 'N').toUpperCase();
   $('pavatar').textContent = (n[0] || 'N').toUpperCase();
 
-  const usd = balanceOf('USD');
+  const cash = balanceOf('USD'); // USD + USDT combined
   if ($('displayCurrency') && document.activeElement !== $('displayCurrency')) {
     $('displayCurrency').value = displayCurrency;
   }
-  $('bal').textContent = formatDisplay(usd);
-  $('balSub').textContent = 'Base wallet: ' + moneyUSD(usd) + ' USD';
+  // Show cash immediately, then upgrade main balance to full portfolio (cash + crypto)
+  $('bal').textContent = formatDisplay(cash);
+  $('balSub').textContent = 'Cash: ' + moneyUSD(cash) + ' · loading crypto…';
+  updateMainBalanceFromPortfolio(cash);
   $('bonus').textContent = '$' + Number(data.bonusLockedUSD || 0).toFixed(2) + ' / $5.00';
   $('rb').textContent = '$' + Number(data.bonusLockedUSD || 0).toFixed(2);
   $('rr').textContent = '$' + Number(data.referralRewardUSD || 0).toFixed(2);
@@ -458,10 +529,13 @@ function render() {
     : '⚠️ ' + (data.warning || '');
 
   const a = data.assets || {};
-  $('assets').innerHTML = ['USDT', 'BTC', 'ETH', 'BNB', 'SOL', 'LTC', 'TRX'].map(x =>
+  // Cash row first (unified), then pure crypto only
+  const cashRow = '<div class="asset row cash-row"><span><b>Cash</b><small>USD + USDT (1:1)</small></span><b>' + moneyUSD(cash) + '</b></div>';
+  const cryptoRows = ['BTC', 'ETH', 'BNB', 'SOL', 'LTC', 'TRX'].map(x =>
     '<div class="asset row"><span><b>' + x + '</b><small class="asset-usd" data-asset="' + x + '">…</small></span>' +
-    '<b>' + Number(a[x] || 0).toFixed(x === 'USDT' ? 2 : 8) + ' ' + x + '</b></div>'
+    '<b>' + Number(a[x] || 0).toFixed(8) + ' ' + x + '</b></div>'
   ).join('');
+  $('assets').innerHTML = cashRow + cryptoRows;
   refreshAssetUsdValues(a);
 
   $('ref').textContent = location.origin + location.pathname + '?ref=' + (data.refCode || me.uid.slice(0, 8));
@@ -836,11 +910,11 @@ function giftModal(id) {
     const den = Number($('gd').value);
     const qty = Math.max(1, Math.floor(Number($('gq').value) || 1));
     const total = den * qty;
-    if (balanceOf('USD') < total) throw new Error('Insufficient USD balance');
+    if (balanceOf('USD') < total) throw new Error('Insufficient cash balance');
     if (data.status === 'banned') throw new Error('Account banned');
 
     await updateDoc(doc(db, 'users', me.uid), {
-      balanceUSD: increment(-total),
+      ...debitCashUpdates(total),
       updatedAt: serverTimestamp()
     });
     const orderRef = await addDoc(collection(db, 'orders'), {
@@ -905,9 +979,9 @@ function productModal(id) {
   pendingAction = async () => {
     const qty = Math.max(1, Math.floor(Number($('sh_qty').value) || 1));
     const total = p.priceUSD * qty;
-    if (balanceOf('USD') < total) throw new Error('Insufficient USD balance');
+    if (balanceOf('USD') < total) throw new Error('Insufficient cash balance');
     await updateDoc(doc(db, 'users', me.uid), {
-      balanceUSD: increment(-total),
+      ...debitCashUpdates(total),
       updatedAt: serverTimestamp()
     });
     await addDoc(collection(db, 'orders'), {
@@ -1084,7 +1158,7 @@ function tradeEstimate() {
   const margin = Number($('tradeamt').value);
   const lev = Number($('leverage')?.value || 1);
   const have = balanceOf('USDT');
-  let t = 'Available USDT: ' + have.toFixed(2);
+  let t = 'Available cash (USD/USDT): ' + have.toFixed(2);
   if (margin > 0 && lastPrice) {
     const notional = margin * lev;
     const units = notional / lastPrice;
@@ -1107,15 +1181,15 @@ $('tradebtn').onclick = async () => {
     const lev = Number($('leverage')?.value || 1);
     if (!(margin > 0)) throw new Error('Enter margin amount');
     if (!lastPrice) throw new Error('Waiting for live price…');
-    if (balanceOf('USDT') < margin) throw new Error('Insufficient USDT margin');
+    if (balanceOf('USDT') < margin) throw new Error('Insufficient cash (USD/USDT) margin');
 
     const sym = $('pair').value;
     const notional = margin * lev;
     const units = notional / lastPrice;
 
-    // Lock margin from USDT
+    // Lock margin from unified cash (USD + USDT)
     await updateDoc(doc(db, 'users', me.uid), {
-      'assets.USDT': increment(-margin),
+      ...debitCashUpdates(margin),
       updatedAt: serverTimestamp()
     });
 
@@ -1221,12 +1295,11 @@ async function closePosition(posId) {
       closedAt: serverTimestamp()
     });
 
-    // Return margin + pnl to USDT (floor at 0 if wiped out)
+    // Return margin + pnl to unified cash (USD wallet)
     const credit = Math.max(0, returnUsdt);
-    await updateDoc(doc(db, 'users', me.uid), {
-      'assets.USDT': increment(credit),
-      updatedAt: serverTimestamp()
-    });
+    const closeUpdates = { updatedAt: serverTimestamp() };
+    if (credit > 0) Object.assign(closeUpdates, creditCashUpdates(credit));
+    await updateDoc(doc(db, 'users', me.uid), closeUpdates);
 
     await addDoc(collection(db, 'transactions'), {
       uid: me.uid,
@@ -1310,11 +1383,12 @@ $('swapBtn').onclick = async () => {
 
     const receive = lastQuote.receive;
     const updates = { updatedAt: serverTimestamp() };
-    if (from === 'USD') updates.balanceUSD = increment(-amount);
+    // Cash (USD/USDT) is unified — never touch both sides as separate ledgers
+    if (from === 'USD' || from === 'USDT') Object.assign(updates, debitCashUpdates(amount));
     else if (from === 'NGN') updates.balanceNGN = increment(-amount);
     else updates['assets.' + from] = increment(-amount);
 
-    if (to === 'USD') updates.balanceUSD = increment(receive);
+    if (to === 'USD' || to === 'USDT') Object.assign(updates, creditCashUpdates(receive));
     else if (to === 'NGN') updates.balanceNGN = increment(receive);
     else updates['assets.' + to] = increment(receive);
 
@@ -1403,18 +1477,18 @@ $('withdrawBtn').onclick = async () => {
       const asset = $('wa').value;
       const dest = $('wd').value.trim();
       if (!dest) throw new Error('Enter wallet address');
-      // Debit from USDT or the crypto asset
-      let debitAsset = asset;
+      // Debit unified cash for USDT, or the crypto asset otherwise
       let debitAmt = amountUSD;
-      if (asset === 'USDT') {
-        if (balanceOf('USDT') < amountUSD) throw new Error('Insufficient USDT');
+      const updates = { updatedAt: serverTimestamp() };
+      if (asset === 'USDT' || asset === 'USD') {
+        if (balanceOf('USDT') < amountUSD) throw new Error('Insufficient cash (USD/USDT)');
+        Object.assign(updates, debitCashUpdates(amountUSD));
       } else {
         const price = await livePrice(asset);
         debitAmt = amountUSD / price;
         if (balanceOf(asset) < debitAmt) throw new Error('Insufficient ' + asset);
+        updates['assets.' + asset] = increment(-debitAmt);
       }
-      const updates = { updatedAt: serverTimestamp() };
-      updates['assets.' + debitAsset] = increment(-debitAmt);
       await updateDoc(doc(db, 'users', me.uid), updates);
       const wRef = await addDoc(collection(db, 'withdrawals'), {
         uid: me.uid,
@@ -1576,11 +1650,12 @@ let histFilter = 'all';
 
 function histCategory(type) {
   const t = String(type || '').toLowerCase();
-  if (t.includes('deposit') || t.includes('blockchain')) return 'deposit';
+  if (t.includes('deposit') || t.includes('blockchain') || t.includes('fund')) return 'deposit';
   if (t.includes('position') || t.includes('trade')) return 'trade';
   if (t.includes('withdraw')) return 'withdrawal';
   if (t.includes('gift') || t.includes('marketplace') || t.includes('order')) return 'order';
-  if (t.includes('swap')) return 'swap';
+  if (t.includes('swap') || t.includes('convert')) return 'swap';
+  if (t.includes('credit') || t.includes('bonus') || t.includes('referral') || t.includes('manual')) return 'deposit';
   return 'other';
 }
 
@@ -1595,15 +1670,67 @@ function histTitle(type) {
 
 function histAmtClass(x) {
   const d = String(x.amountDisplay || '');
-  const t = String(x.type || '');
-  if (d.startsWith('+') || t.includes('deposit') && !t.includes('pending')) return 'in';
-  if (d.startsWith('-') || t.includes('withdraw') || t.includes('purchase') || t.includes('order')) return 'out';
+  const t = String(x.type || '').toLowerCase();
+  const n = Number(x.amountUSD);
+  if (d.startsWith('+') || (Number.isFinite(n) && n > 0 && (t.includes('deposit') || t.includes('credit') || t.includes('close')))) return 'in';
+  if (d.startsWith('-') || t.includes('withdraw') || t.includes('purchase') || t.includes('order') || t.includes('open')) return 'out';
   if (t.includes('position_close') || t.includes('pnl')) {
     if (Number(x.pnl) > 0) return 'in';
     if (Number(x.pnl) < 0) return 'out';
   }
-  if (t.includes('position_open')) return 'out';
+  if (Number.isFinite(n) && n < 0) return 'out';
+  if (Number.isFinite(n) && n > 0) return 'in';
   return 'neutral';
+}
+
+function histTimeMs(x) {
+  if (x.createdAt && x.createdAt.toMillis) return x.createdAt.toMillis();
+  if (x.createdAt && x.createdAt.seconds) return x.createdAt.seconds * 1000;
+  if (x.closedAt && x.closedAt.toMillis) return x.closedAt.toMillis();
+  return x._ts || 0;
+}
+
+function normalizeHistoryRow(source, id, raw) {
+  const x = Object.assign({}, raw, { _id: id, _source: source });
+  if (!x.type) {
+    if (source === 'deposits' || source === 'blockchainDeposits') {
+      x.type = source === 'blockchainDeposits' ? 'blockchain_deposit' : ('deposit_' + (raw.provider || 'manual'));
+    } else if (source === 'withdrawals') {
+      x.type = 'withdrawal_' + (raw.type || 'crypto');
+    } else if (source === 'positions') {
+      x.type = raw.status === 'closed'
+        ? 'position_close'
+        : (raw.side === 'buy' ? 'position_open_long' : 'position_open_short');
+    } else if (source === 'orders') {
+      x.type = raw.type === 'marketplace' ? 'marketplace_order' : 'gift_card_order';
+    } else {
+      x.type = 'activity';
+    }
+  }
+  if (!x.status) x.status = raw.status || 'completed';
+  if (x.amountDisplay == null || x.amountDisplay === '') {
+    if (raw.amountUSD != null) {
+      const n = Number(raw.amountUSD);
+      x.amountDisplay = (n >= 0 ? '+' : '') + moneyUSD(n);
+      if (x.amountUSD == null) x.amountUSD = n;
+    } else if (raw.margin != null && source === 'positions') {
+      const pnl = raw.pnl != null ? Number(raw.pnl) : null;
+      if (raw.status === 'closed' && pnl != null) {
+        x.amountDisplay = (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + ' USDT PnL';
+        x.amountUSD = pnl;
+        x.pnl = pnl;
+      } else {
+        x.amountDisplay = 'Margin ' + moneyUSD(raw.margin);
+        x.amountUSD = -Math.abs(Number(raw.margin) || 0);
+      }
+    } else if (raw.amount != null) {
+      x.amountDisplay = String(raw.amount);
+    } else {
+      x.amountDisplay = '—';
+    }
+  }
+  if (!x.createdAt && raw.closedAt) x.createdAt = raw.closedAt;
+  return x;
 }
 
 function renderHistoryList() {
@@ -1616,7 +1743,6 @@ function renderHistoryList() {
     rows = historyCache.filter(x => histCategory(x.type) === histFilter);
   }
 
-  // Summary from full cache
   let inSum = 0, outSum = 0;
   historyCache.forEach(x => {
     const n = Number(x.amountUSD);
@@ -1627,24 +1753,29 @@ function renderHistoryList() {
   });
   if (sum) {
     sum.innerHTML =
-      '<div class="hist-sum-card"><small>Total in (logged)</small><b class="tx-amt in">' + moneyUSD(inSum) + '</b></div>' +
-      '<div class="hist-sum-card"><small>Total out (logged)</small><b class="tx-amt out">' + moneyUSD(outSum) + '</b></div>';
+      '<div class="hist-sum-card"><small>Total in</small><b class="tx-amt in">' + moneyUSD(inSum) + '</b></div>' +
+      '<div class="hist-sum-card"><small>Total out</small><b class="tx-amt out">' + moneyUSD(outSum) + '</b></div>' +
+      '<div class="hist-sum-card" style="grid-column:1/-1"><small>All activity</small><b>' + historyCache.length + ' records</b></div>';
   }
 
   if (!rows.length) {
-    list.innerHTML = '<p class="muted">No transactions in this category yet.</p>';
+    list.innerHTML = '<p class="muted">No transactions in this category yet. Deposits, trades, swaps, withdrawals and orders will appear here.</p>';
     return;
   }
 
   list.innerHTML = rows.map(x => {
-    const when = x.createdAt && x.createdAt.toDate ? x.createdAt.toDate().toLocaleString() : (x._when || '');
+    const when = x.createdAt && x.createdAt.toDate
+      ? x.createdAt.toDate().toLocaleString()
+      : (x.createdAt && x.createdAt.seconds
+        ? new Date(x.createdAt.seconds * 1000).toLocaleString()
+        : '');
     const st = String(x.status || '');
     let badge = '';
-    if (st === 'pending_review' || st === 'pending_fulfilment' || st === 'open')
+    if (st === 'pending_review' || st === 'pending_fulfilment' || st === 'open' || st === 'pending')
       badge = '<span class="badge badge-pending">' + esc(st.replace(/_/g, ' ')) + '</span>';
-    else if (st === 'completed' || st === 'filled' || st === 'closed')
+    else if (st === 'completed' || st === 'filled' || st === 'closed' || st === 'credited')
       badge = '<span class="badge badge-completed">' + esc(st) + '</span>';
-    else if (st === 'failed' || st === 'rejected')
+    else if (st === 'failed' || st === 'rejected' || st === 'cancelled')
       badge = '<span class="badge badge-failed">' + esc(st) + '</span>';
     else if (st)
       badge = '<span class="badge">' + esc(st) + '</span>';
@@ -1656,62 +1787,92 @@ function renderHistoryList() {
     if (x.symbol) extra.push(x.symbol);
     if (x.network) extra.push(x.network);
     if (x.provider) extra.push(x.provider);
+    if (x.asset) extra.push(x.asset);
 
     return '<div class="tx-item">' +
       '<div class="tx-icon">' + histIcon(x.type) + '</div>' +
       '<div class="tx-body"><b>' + esc(histTitle(x.type)) + '</b>' + badge +
       '<small>' + esc(when) + (extra.length ? ' · ' + esc(extra.join(' · ')) : '') + '</small></div>' +
-      '<div class="tx-right"><span class="tx-amt ' + cls + '">' + esc(amt) + '</span></div>' +
+      '<div class="tx-right"><span class="tx-amt ' + cls + '">' + esc(String(amt)) + '</span></div>' +
     '</div>';
   }).join('');
 }
 
+async function fetchUserCollection(name, limitN) {
+  if (!me) return [];
+  try {
+    let docs = [];
+    try {
+      const s = await getDocs(query(
+        collection(db, name),
+        where('uid', '==', me.uid),
+        orderBy('createdAt', 'desc'),
+        limit(limitN || 80)
+      ));
+      docs = s.docs;
+    } catch (_) {
+      const s = await getDocs(query(
+        collection(db, name),
+        where('uid', '==', me.uid),
+        limit(limitN || 80)
+      ));
+      docs = s.docs;
+    }
+    return docs.map(d => normalizeHistoryRow(name, d.id, d.data()));
+  } catch (e) {
+    console.warn('history fetch', name, e);
+    return [];
+  }
+}
+
 async function loadHistory() {
   const list = $('historyList');
-  if (list) list.innerHTML = '<p class="muted">Loading history…</p>';
+  if (list) list.innerHTML = '<p class="muted">Loading overall history…</p>';
   histFilter = 'all';
   document.querySelectorAll('.hist-filter').forEach(b => {
     b.classList.toggle('active', b.dataset.hfilter === 'all');
   });
 
   try {
-    let docs = [];
-    try {
-      const s = await getDocs(query(
-        collection(db, 'transactions'),
-        where('uid', '==', me.uid),
-        orderBy('createdAt', 'desc'),
-        limit(120)
-      ));
-      docs = s.docs;
-    } catch (idxErr) {
-      // Fallback without orderBy if composite index missing
-      const s = await getDocs(query(
-        collection(db, 'transactions'),
-        where('uid', '==', me.uid),
-        limit(120)
-      ));
-      docs = s.docs.slice().sort((a, b) => {
-        const ta = a.data().createdAt?.toMillis?.() || 0;
-        const tb = b.data().createdAt?.toMillis?.() || 0;
-        return tb - ta;
-      });
+    const [txs, deps, chain, wds, pos, ords] = await Promise.all([
+      fetchUserCollection('transactions', 120),
+      fetchUserCollection('deposits', 60),
+      fetchUserCollection('blockchainDeposits', 60),
+      fetchUserCollection('withdrawals', 60),
+      fetchUserCollection('positions', 60),
+      fetchUserCollection('orders', 60)
+    ]);
+
+    const seen = new Set();
+    const keyOf = (x) => {
+      const t = histTimeMs(x);
+      return [x.type, x.reference || '', x.txHash || '', String(x.amountDisplay || ''), Math.floor(t / 5000)].join('|');
+    };
+
+    const merged = [];
+    for (const x of txs) {
+      seen.add(keyOf(x));
+      merged.push(x);
+    }
+    for (const group of [deps, chain, wds, pos, ords]) {
+      for (const x of group) {
+        const k = keyOf(x);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        merged.push(x);
+      }
     }
 
-    historyCache = docs.map(d => {
-      const x = d.data();
-      x._id = d.id;
-      return x;
-    });
+    merged.sort((a, b) => histTimeMs(b) - histTimeMs(a));
+    historyCache = merged;
     renderHistoryList();
   } catch (x) {
     if (list) {
-      list.innerHTML = '<p class="muted">Could not load history. In Firebase Console create an index on <b>transactions</b>: uid ASC, createdAt DESC.</p><p class="muted">' + esc(err(x)) + '</p>';
+      list.innerHTML = '<p class="muted">Could not load history. Ensure Firestore rules allow reading your own documents.</p><p class="muted">' + esc(err(x)) + '</p>';
     }
   }
 }
 
-// History filter clicks
 document.addEventListener('click', e => {
   const f = e.target.closest('.hist-filter');
   if (!f) return;
