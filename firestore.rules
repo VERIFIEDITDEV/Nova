@@ -4,56 +4,63 @@ service cloud.firestore {
 
     function signedIn() { return request.auth != null; }
     function isOwner(uid) { return signedIn() && request.auth.uid == uid; }
+    // Add your admin UIDs here (same as admin.js ADMIN_UIDS)
+    function isAdmin() {
+      return signedIn() && request.auth.uid in [
+        // 'PASTE_YOUR_ADMIN_UID_HERE'
+      ];
+    }
 
-    // Users may create their profile and update non-balance fields freely.
-    // Balance changes for deposits are done by admin in Firebase Console.
-    // Trading/swap still update assets client-side (Spark limitation).
     match /users/{id} {
-      allow read: if isOwner(id);
+      allow read: if isOwner(id) || isAdmin();
       allow create: if isOwner(id)
         && request.resource.data.uid == id
         && request.resource.data.balanceUSD == 0
         && request.resource.data.balanceNGN == 0;
       allow update: if isOwner(id)
-        && request.resource.data.uid == resource.data.uid;
+        && request.resource.data.uid == resource.data.uid
+        || isAdmin();
       allow delete: if false;
     }
 
-    // Fiat deposits — user creates pending only; admin marks completed + credits balance in Console
     match /deposits/{id} {
-      allow read: if signedIn() && resource.data.uid == request.auth.uid;
+      allow read: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
       allow create: if signedIn()
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.status == 'pending_review';
-      allow update, delete: if false;
+      allow update: if isAdmin();
+      allow delete: if false;
     }
 
     match /transactions/{id} {
-      allow read: if signedIn() && resource.data.uid == request.auth.uid;
-      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow read: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if signedIn() && (request.resource.data.uid == request.auth.uid || isAdmin());
       allow update, delete: if false;
     }
 
     match /orders/{id} {
-      allow read: if signedIn() && resource.data.uid == request.auth.uid;
+      allow read: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
       allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
-      allow update, delete: if false;
+      allow update: if isAdmin();
+      allow delete: if false;
     }
 
     match /withdrawals/{id} {
-      allow read: if signedIn() && resource.data.uid == request.auth.uid;
+      allow read: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
       allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
-      allow update, delete: if false;
+      allow update: if isAdmin();
+      allow delete: if false;
     }
 
     match /blockchainDeposits/{id} {
-      allow read: if signedIn() && resource.data.uid == request.auth.uid;
+      allow read: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
       allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
-      allow update, delete: if false;
+      allow update: if isAdmin();
+      allow delete: if false;
     }
 
     match /positions/{id} {
-      allow read: if signedIn() && resource.data.uid == request.auth.uid;
+      allow read: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
       allow create: if signedIn()
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.status == 'open';
@@ -71,7 +78,7 @@ service cloud.firestore {
 
     match /config/{doc} {
       allow read: if signedIn();
-      allow write: if false;
+      allow write: if isAdmin();
     }
 
     match /{document=**} {

@@ -151,3 +151,25 @@ See **[ADMIN_CREDIT.md](./ADMIN_CREDIT.md)** for the exact console clicks to cre
 Minimum deposit: **$10** (fiat and crypto).
 
 Crypto balances on the home screen show **live USD value** (Binance rate) so trades and manual credits stay consistent with market price.
+
+
+## Admin panel (Spark)
+
+Open **`/admin.html`** on your site (e.g. `https://your-domain/admin.html`).
+
+1. Copy your Firebase Auth **UID** from Authentication → Users  
+2. Paste into `ADMIN_UIDS` in **`public/admin.js`**  
+3. Paste the same UID into **`firestore.rules`** → `isAdmin()` list  
+4. Deploy: `firebase deploy --only hosting,firestore:rules`
+
+Admin can: approve deposits (credits balance), manage withdrawals, list users, manual credit.
+
+## Account activation
+
+New email/password signups get `status: pending_verification`.  
+After the user clicks the email link, status becomes `active`.  
+Google sign-in is treated as verified.
+
+## Games
+
+Marketplace clothing was replaced by **Games**: Lucky Flip, Tic Tac Toe, Crypto Quiz.
