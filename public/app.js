@@ -25,11 +25,11 @@ const firebaseConfig = {
 };
 
 // Public keys only (never put secret keys in the browser)
-const PAYSTACK_PUBLIC_KEY = 'pk_test_REPLACE_ME';
+const PAYSTACK_PUBLIC_KEY = 'pk_live_725e9c0357625ec847ec27b37e4d1033ac90a718';
 const FLW_PUBLIC_KEY = 'FLWPUBK_TEST_REPLACE_ME';
 const KORA_PUBLIC_KEY = 'pk_test_kora_REPLACE_ME';
-const MOONPAY_API_KEY = 'pk_test_moonpay_REPLACE_ME';
-const SUPPORT = { telegram: '', x: '', tiktok: '' };
+const MOONPAY_API_KEY = 'pk_test_wxTCJ7ZTxOFTvnzzHQfx80TLdPczLfz';
+const SUPPORT = { telegram: '', WhatsApp: 'https://wa.me/qr/DYDA2TE77XJ5F1', tiktok: 'https://tiktok.com/@noval_intel' };
 
 const BINANCE_REST = 'https://data-api.binance.vision/api/v3';
 const BINANCE_WS = 'wss://data-stream.binance.vision/ws';
