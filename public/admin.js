@@ -22,7 +22,7 @@ const firebaseConfig = {
 
 // *** ADD YOUR ADMIN UID(S) HERE (Authentication → Users → User UID) ***
 const ADMIN_UIDS = [
-  // 'PASTE_YOUR_UID_HERE'
+  // 'ayXn1TqY9QZI8WCrCm3Ug38BNAc2'
 ];
 
 const app = initializeApp(firebaseConfig);
