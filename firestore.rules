@@ -7,7 +7,7 @@ service cloud.firestore {
     // Add your admin UIDs here (same as admin.js ADMIN_UIDS)
     function isAdmin() {
       return signedIn() && request.auth.uid in [
-        // 'PASTE_YOUR_ADMIN_UID_HERE'
+        'ayXn1TqY9QZI8WCrCm3Ug38BNAc2'
       ];
     }
 
