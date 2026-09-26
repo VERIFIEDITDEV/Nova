@@ -118,7 +118,7 @@ const GAMES = [
 ];
 
 // Admin UIDs — add your Firebase Auth UID(s) here for admin panel access
-const ADMIN_UIDS = []; // e.g. ['ayXn1TqY9QZl8WCrCm3Ug38BNAc2']
+const ADMIN_UIDS = ['ayXn1TqY9QZI8WCrCm3Ug38BNAc2']; // e.g. ['ayXn1TqY9QZl8WCrCm3Ug38BNAc2']
 const ANDROID_APP_URL = 'https://play.google.com/store/apps/details?id=com.novapay.app'; // replace when live
 const IOS_COMING_SOON = true;
 const REFERRAL_REWARD_USD = 1; // credited to referrer when referred user verifies email
