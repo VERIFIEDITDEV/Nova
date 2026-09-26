@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NovaPay Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<style>
+  body{background:var(--bg);margin:0;font-family:Inter,system-ui,sans-serif}
+  .admin{max-width:960px;margin:0 auto;padding:20px}
+  .admin header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+  .admin h1{font-size:22px;margin:0}
+  .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  .tabs button{border-radius:20px;padding:8px 14px;border:1px solid var(--border);background:var(--card)}
+  .tabs button.active{background:var(--purple);color:#fff;border-color:var(--purple)}
+  .panel{background:var(--card);border-radius:16px;padding:16px;margin-bottom:16px;border:1px solid var(--border)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--border)}
+  .auth-box{max-width:360px;margin:80px auto;padding:24px;background:var(--card);border-radius:16px}
+  .muted{color:var(--muted);font-size:13px}
+  input,select{width:100%;padding:10px;margin:6px 0 12px;border-radius:10px;border:1px solid var(--border)}
+  .row-actions{display:flex;gap:6px;flex-wrap:wrap}
+  .row-actions button{font-size:12px;padding:6px 10px}
+</style>
+</head>
+<body>
+<div id="loginBox" class="auth-box">
+  <div class="brand" style="width:48px;height:48px;border-radius:12px;background:var(--purple);color:#fff;display:grid;place-items:center;font-weight:800;margin-bottom:12px">N</div>
+  <h1>NovaPay Admin</h1>
+  <p class="muted">Spark plan · same Firebase project · admin UID required</p>
+  <input id="email" type="email" placeholder="Admin email">
+  <input id="pass" type="password" placeholder="Password">
+  <button class="primary full" id="loginBtn">Sign in</button>
+  <p id="loginMsg" class="muted"></p>
+</div>
+
+<div id="adminApp" class="admin hidden">
+  <header>
+    <h1>NovaPay Admin</h1>
+    <button class="secondary" id="logoutBtn">Logout</button>
+  </header>
+  <div class="tabs">
+    <button class="active" data-tab="pending">Pending deposits</button>
+    <button data-tab="withdrawals">Withdrawals</button>
+    <button data-tab="users">Users</button>
+    <button data-tab="credit">Manual credit</button>
+  </div>
+
+  <section id="tab-pending" class="panel">
+    <h3>Pending deposits</h3>
+    <p class="muted">Confirm payment, then credit balance and mark completed.</p>
+    <div id="pendingList">Loading…</div>
+  </section>
+
+  <section id="tab-withdrawals" class="panel hidden">
+    <h3>Pending withdrawals</h3>
+    <div id="wdList">Loading…</div>
+  </section>
+
+  <section id="tab-users" class="panel hidden">
+    <h3>Recent users</h3>
+    <div id="userList">Loading…</div>
+  </section>
+
+  <section id="tab-credit" class="panel hidden">
+    <h3>Manual credit</h3>
+    <label>User UID</label>
+    <input id="cUid" placeholder="Firebase Auth UID">
+    <label>Amount USD (cash)</label>
+    <input id="cAmt" type="number" step="0.01" placeholder="50">
+    <label>Note</label>
+    <input id="cNote" placeholder="Bank transfer / USDT TX">
+    <button class="primary" id="creditBtn">Credit balanceUSD</button>
+    <p id="creditMsg" class="muted"></p>
+    <hr>
+    <label>Crypto asset (optional)</label>
+    <select id="cAsset">
+      <option value="">— cash only —</option>
+      <option>BTC</option><option>ETH</option><option>BNB</option><option>SOL</option><option>LTC</option><option>TRX</option>
+    </select>
+    <label>Crypto amount</label>
+    <input id="cCryptoAmt" type="number" step="any" placeholder="0.001">
+    <button class="secondary" id="creditCryptoBtn">Credit crypto asset</button>
+  </section>
+</div>
+
+<script type="module" src="admin.js"></script>
+</body>
+</html>

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#6835ed">
-<meta name="description" content="NovaPay — Wallet, Live Trading, Gift Cards & Marketplace">
+<meta name="description" content="NovaPay — Wallet, Live Trading, Gift Cards & Games">
 <title>NovaPay</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -14,6 +14,85 @@
 <script src="https://checkout.flutterwave.com/v3.js"></script>
 </head>
 <body>
+
+<!-- INTRO / LANDING (Trust Wallet-inspired) -->
+<section id="intro" class="tw-landing hidden">
+  <nav class="tw-nav">
+    <div class="tw-logo"><span class="tw-mark">N</span> NovaPay</div>
+    <div class="tw-nav-right">
+      <button type="button" class="tw-link" data-intro="skip">Log in</button>
+      <button type="button" class="tw-pill" data-intro="android">Download</button>
+    </div>
+  </nav>
+
+  <div class="tw-hero">
+    <h1 class="tw-fade">The crypto wallet<br>you control</h1>
+    <p class="tw-sub tw-fade tw-delay-1">NovaPay is a self-serve wallet for web &amp; Android. Deposit crypto, trade live markets, buy gift cards and play games — while you stay in control of your balance.</p>
+    <div class="tw-cta tw-fade tw-delay-2">
+      <button type="button" class="tw-pill tw-pill-lg" data-intro="android">Download for Android</button>
+      <button type="button" class="tw-ghost" data-intro="next">Continue on web</button>
+    </div>
+    <p class="tw-ios tw-fade tw-delay-3">iPhone version coming soon · use the web app today</p>
+  </div>
+
+  <div class="tw-phone tw-fade tw-delay-2">
+    <div class="tw-phone-frame">
+      <div class="tw-phone-notch"></div>
+      <div class="tw-phone-screen">
+        <div class="tw-ps-top">Main Wallet</div>
+        <div class="tw-ps-bal">$12,480.50</div>
+        <div class="tw-ps-row"><span>Cash</span><b>$8,200</b></div>
+        <div class="tw-ps-row"><span>BTC</span><b>0.042</b></div>
+        <div class="tw-ps-row"><span>ETH</span><b>1.25</b></div>
+        <div class="tw-ps-actions">
+          <span>Deposit</span><span>Trade</span><span>Swap</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <section class="tw-features">
+    <h2 class="tw-fade">Every move you make in crypto.<br>One app.</h2>
+    <div class="tw-grid">
+      <article class="tw-card tw-fade">
+        <div class="tw-ico">⛓️</div>
+        <h3>Crypto deposits</h3>
+        <p>Fund with Bitcoin, BNB, TRON, Litecoin and more. Primary way to add money.</p>
+      </article>
+      <article class="tw-card tw-fade tw-delay-1">
+        <div class="tw-ico">📈</div>
+        <h3>Live trading</h3>
+        <p>Open and close positions with live market prices, margin and PnL — like MT5.</p>
+      </article>
+      <article class="tw-card tw-fade tw-delay-2">
+        <div class="tw-ico">🎁</div>
+        <h3>Gift cards &amp; games</h3>
+        <p>Redeem cards worldwide. Play casino, tic-tac-toe and quiz with your balance.</p>
+      </article>
+      <article class="tw-card tw-fade tw-delay-3">
+        <div class="tw-ico">🔗</div>
+        <h3>Refer &amp; earn</h3>
+        <p>Every friend who signs up counts. Rewards unlock when they verify email.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="tw-steps">
+    <h2>How NovaPay works</h2>
+    <div class="tw-step-list">
+      <div class="tw-step"><span>1</span><div><b>Create account</b><p>Sign up and confirm your email to activate.</p></div></div>
+      <div class="tw-step"><span>2</span><div><b>Deposit crypto</b><p>Send to your NovaPay address or use MoonPay.</p></div></div>
+      <div class="tw-step"><span>3</span><div><b>Trade &amp; withdraw</b><p>Trade live, swap assets, withdraw crypto or gift cards.</p></div></div>
+    </div>
+    <button type="button" class="tw-pill tw-pill-lg" data-intro="done">Get started</button>
+  </section>
+
+  <footer class="tw-foot">
+    <span>© NovaPay</span>
+    <button type="button" class="tw-link" data-intro="done">Skip intro</button>
+  </footer>
+</section>
+
 <div id="warning" class="warning hidden"></div>
 <div id="emailVerifyBanner" class="email-banner hidden">
   <span>📧 Confirm your email to unlock full access.</span>
@@ -25,7 +104,7 @@
   <div class="authbox">
     <div class="brand">N</div>
     <h1>NovaPay</h1>
-    <p>Wallet • Live Trading • Gift Cards • Marketplace</p>
+    <p>Wallet • Live Trading • Gift Cards • Games</p>
     <div class="tabs">
       <button class="active" data-tab="login">Login</button>
       <button data-tab="signup">Sign up</button>
@@ -105,7 +184,7 @@
 </section>
 
 <!-- ===================== APP ===================== -->
-<div id="app" class="app hidden">
+<div id="app" class="app hidden tw-app">
   <header>
     <div class="user">
       <div id="avatar" class="avatar">N</div>
@@ -142,7 +221,7 @@
       <h2 id="bal">$0.00</h2>
       <div class="bal-sub" id="balSub">Base wallet: $0.00 USD</div>
       <div class="actions">
-        <button class="primary" id="fund">Add money</button>
+        <button class="primary" id="fund">Deposit</button>
         <button class="secondary" data-page="withdraw">Withdraw</button>
       </div>
       <div class="lock">🔐 Deposit bonus locked <b id="bonus">$0.00 / $5.00</b></div>
@@ -153,6 +232,7 @@
       <button data-page="swap">🔄<b>Swap</b></button>
       <button data-page="trade">📈<b>Trade</b></button>
       <button data-page="giftcards">🎁<b>Gift cards</b></button>
+      <button data-page="games">🎮<b>Games</b></button>
     </section>
 
     <section class="panel hidden" id="pendingPanel">
@@ -174,7 +254,7 @@
       <div class="services">
         <button data-page="trade">📈<span>Trading</span></button>
         <button data-page="giftcards">🎁<span>Gift Cards</span></button>
-        <button data-page="market">🛍️<span>Shop</span></button>
+        <button data-page="games">🎮<span>Games</span></button>
         <button data-page="swap">🔄<span>Swap</span></button>
         <button data-page="rewards">✨<span>Rewards</span></button>
         <button data-page="withdraw">💸<span>Withdraw</span></button>
@@ -277,12 +357,15 @@
   </main>
 
   <!-- MARKETPLACE -->
-  <main id="market" class="page">
+    <main id="games" class="page">
     <div class="title">
       <button data-page="home">‹</button>
-      <div><h2>Marketplace</h2><small>Clothes · watches · accessories</small></div>
+      <div><h2>Games</h2><small>Casino · Tic Tac Toe · Quiz</small></div>
     </div>
-    <div id="products" class="grid"></div>
+    <section class="panel">
+      <p class="hint">Play with your cash balance. Wins and losses appear in Overall History with a receipt.</p>
+    </section>
+    <div id="gamesGrid" class="grid"></div>
   </main>
 
   <!-- SWAP -->
@@ -341,6 +424,7 @@
     <section class="panel">
       <div class="row"><span>Locked deposit bonus</span><b id="rb">$0.00</b></div>
       <div class="row"><span>Referral reward</span><b id="rr">$0.00</b></div>
+      <div class="row"><span>Referrals counted</span><b id="rrCount">0</b></div>
     </section>
   </main>
 
@@ -348,7 +432,7 @@
   <main id="withdraw" class="page">
     <div class="title">
       <button data-page="home">‹</button>
-      <div><h2>Withdrawal</h2><small>Crypto or gift card only · min $10 · reviewed</small></div>
+      <div><h2>Withdrawal</h2><small>Crypto primary · gift card secondary · min $10</small></div>
     </div>
     <section class="panel">
       <label>Withdraw as</label>
@@ -437,7 +521,7 @@
   <main id="deposit" class="page">
     <div class="title">
       <button data-page="home">‹</button>
-      <div><h2>Crypto Deposit</h2><small>Buy or send crypto · country-aware</small></div>
+      <div><h2>Crypto Deposit</h2><small>Primary funding method · min $10</small></div>
     </div>
     <section class="panel">
       <p class="hint" id="cryptoAvailHint">Select a method available in your country.</p>

@@ -25,7 +25,7 @@ const firebaseConfig = {
 };
 
 // Public keys only (never put secret keys in the browser)
-const PAYSTACK_PUBLIC_KEY = 'pk_live_725e9c0357625ec847ec27b37e4d1033ac90a718';
+const PAYSTACK_PUBLIC_KEY = 'pk_test_REPLACE_ME';
 const FLW_PUBLIC_KEY = 'FLWPUBK_TEST_REPLACE_ME';
 const KORA_PUBLIC_KEY = 'pk_test_kora_REPLACE_ME';
 const MOONPAY_API_KEY = 'pk_test_moonpay_REPLACE_ME';
@@ -103,20 +103,26 @@ const GIFT_CARDS = [
   { id: 12, brand: 'Starbucks', region: 'US', emoji: '☕' },
   { id: 13, brand: 'Amazon', region: 'UK', emoji: '🛒' },
   { id: 14, brand: 'Apple', region: 'UK', emoji: '🍎' },
-  { id: 15, brand: 'Jumia', region: 'NG', emoji: '🛍️' },
-  { id: 16, brand: 'MTN', region: 'NG', emoji: '📱' },
-  { id: 17, brand: 'Airbnb', region: 'GLOBAL', emoji: '🏠' },
-  { id: 18, brand: 'Disney+', region: 'US', emoji: '✨' }
+  { id: 15, brand: 'Airbnb', region: 'GLOBAL', emoji: '🏠' },
+  { id: 16, brand: 'Disney+', region: 'US', emoji: '✨' },
+  { id: 17, brand: 'Roblox', region: 'GLOBAL', emoji: '🧱' },
+  { id: 18, brand: 'Razer Gold', region: 'GLOBAL', emoji: '💛' }
 ];
 const DENOMS = [10, 25, 50, 100, 200];
-const PRODUCTS = [
-  { id: 1, name: 'Classic Tee', priceUSD: 29, emoji: '👕' },
-  { id: 2, name: 'Gold Watch', priceUSD: 249, emoji: '⌚' },
-  { id: 3, name: 'Gold Chain', priceUSD: 189, emoji: '📿' },
-  { id: 4, name: 'Sneakers Pro', priceUSD: 119, emoji: '👟' },
-  { id: 5, name: 'Leather Bag', priceUSD: 159, emoji: '👜' },
-  { id: 6, name: 'Sunglasses', priceUSD: 79, emoji: '🕶️' }
+
+// Games replace clothing marketplace
+const GAMES = [
+  { id: 'casino', name: 'Lucky Flip', emoji: '🎰', desc: 'Coin flip casino · 1.95x payout' },
+  { id: 'tictactoe', name: 'Tic Tac Toe', emoji: '⭕', desc: 'Beat the bot · win 1.8x stake' },
+  { id: 'quiz', name: 'Crypto Quiz', emoji: '🧠', desc: '5 questions · win up to 2x' }
 ];
+
+// Admin UIDs — add your Firebase Auth UID(s) here for admin panel access
+const ADMIN_UIDS = []; // e.g. ['ayXn1TqY9QZl8WCrCm3Ug38BNAc2']
+const ANDROID_APP_URL = 'https://play.google.com/store/apps/details?id=com.novapay.app'; // replace when live
+const IOS_COMING_SOON = true;
+const REFERRAL_REWARD_USD = 1; // credited to referrer when referred user verifies email
+
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -159,6 +165,49 @@ function updateEmailBanner(u) {
   const need = u && !u.emailVerified && u.providerData?.some(p => p.providerId === 'password');
   ban.classList.toggle('hidden', !need);
   document.body.classList.toggle('has-email-banner', !!need);
+  // Activate account once email is verified
+  if (u && u.emailVerified && data && data.status === 'pending_verification') {
+    updateDoc(doc(db, 'users', u.uid), {
+      status: 'active',
+      emailVerifiedAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    }).then(() => {
+      toast('Account activated');
+      // Reward referrer once when referee verifies
+      creditReferrerOnVerify(u.uid).catch(() => {});
+    }).catch(() => {});
+  }
+  // Google sign-in is treated as verified
+  if (u && u.providerData?.some(p => p.providerId === 'google.com') && data && data.status === 'pending_verification') {
+    updateDoc(doc(db, 'users', u.uid), { status: 'active', updatedAt: serverTimestamp() }).catch(() => {});
+  }
+}
+
+async function creditReferrerOnVerify(newUid) {
+  const snap = await getDoc(doc(db, 'users', newUid));
+  if (!snap.exists()) return;
+  const d = snap.data();
+  if (d.referralRewardPaid) return;
+  const refCodeUsed = d.referredBy;
+  if (!refCodeUsed) return;
+  const qs = await getDocs(query(collection(db, 'users'), where('refCode', '==', refCodeUsed), limit(1)));
+  if (qs.empty) return;
+  const rdoc = qs.docs[0];
+  await updateDoc(rdoc.ref, {
+    referralRewardUSD: increment(REFERRAL_REWARD_USD),
+    balanceUSD: increment(REFERRAL_REWARD_USD),
+    updatedAt: serverTimestamp()
+  });
+  await updateDoc(doc(db, 'users', newUid), { referralRewardPaid: true });
+  await addDoc(collection(db, 'transactions'), {
+    uid: rdoc.id,
+    type: 'referral_reward',
+    status: 'completed',
+    amountUSD: REFERRAL_REWARD_USD,
+    amountDisplay: '+$' + REFERRAL_REWARD_USD.toFixed(2),
+    referredUid: newUid,
+    createdAt: serverTimestamp()
+  });
 }
 
 async function maybeRequestNotifications() {
@@ -342,7 +391,7 @@ function page(p) {
   if (p !== 'trade') stopFeed();
   if (p === 'trade') startTrade();
   if (p === 'giftcards') renderGifts();
-  if (p === 'market') renderMarket();
+  if (p === 'games') renderGames();
   if (p === 'home') loadPendingDeposits();
   if (p === 'historyPage') loadHistory();
   if (p === 'deposit') renderCryptoMethods();
@@ -448,18 +497,42 @@ async function ensureProfile(user) {
     dob: signupMeta.dob || '',
     balanceUSD: 0,
     balanceNGN: 0,
-    assets: { USDT: 0, BTC: 0, ETH: 0, BNB: 0, SOL: 0, LTC: 0, TRX: 0 }, // USDT is folded into cash with balanceUSD (1:1)
+    assets: { USDT: 0, BTC: 0, ETH: 0, BNB: 0, SOL: 0, LTC: 0, TRX: 0 },
     bonusLockedUSD: 0,
     referralRewardUSD: 0,
+    referralCount: 0,
     refCode,
     referredBy: localStorage.getItem('np_ref') || '',
-    status: 'active',
+    status: 'pending_verification', // inactive until email verified
     warning: '',
     hasPasscode: false,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   };
   await setDoc(ref, profile);
+  // Count referral for referrer (every signup counts)
+  try {
+    const refCodeUsed = profile.referredBy;
+    if (refCodeUsed) {
+      const qs = await getDocs(query(collection(db, 'users'), where('refCode', '==', refCodeUsed), limit(1)));
+      if (!qs.empty) {
+        const rdoc = qs.docs[0];
+        await updateDoc(rdoc.ref, {
+          referralCount: increment(1),
+          updatedAt: serverTimestamp()
+        });
+        await addDoc(collection(db, 'transactions'), {
+          uid: rdoc.id,
+          type: 'referral_signup',
+          status: 'counted',
+          amountDisplay: 'Referral signup',
+          amountUSD: 0,
+          referredUid: user.uid,
+          createdAt: serverTimestamp()
+        });
+      }
+    }
+  } catch (e) { console.warn('referral count', e); }
   signupMeta = {};
   return profile;
 }
@@ -523,10 +596,14 @@ function render() {
 
   const w = $('warning');
   const banned = data.status === 'banned';
-  w.classList.toggle('hidden', !data.warning && !banned);
+  const pending = data.status === 'pending_verification';
+  w.classList.toggle('hidden', !data.warning && !banned && !pending);
   w.textContent = banned
     ? '⚠️ Your account is banned. Transactions are disabled.'
-    : '⚠️ ' + (data.warning || '');
+    : pending
+      ? '⚠️ Account inactive — confirm your email to activate trading and withdrawals.'
+      : '⚠️ ' + (data.warning || '');
+  if ($('rrCount')) $('rrCount').textContent = String(data.referralCount || 0);
 
   const a = data.assets || {};
   // Cash row first (unified), then pure crypto only
@@ -541,6 +618,7 @@ function render() {
   $('ref').textContent = location.origin + location.pathname + '?ref=' + (data.refCode || me.uid.slice(0, 8));
   updateWithdrawBalance();
   loadPendingDeposits();
+  maybeShowAdPopup();
 }
 
 function modal(html) {
@@ -563,8 +641,10 @@ document.addEventListener('click', async e => {
 
   const gift = e.target.closest('[data-gift]');
   if (gift) return giftModal(Number(gift.dataset.gift));
-  const prod = e.target.closest('[data-prod]');
-  if (prod) return productModal(Number(prod.dataset.prod));
+  const game = e.target.closest('[data-game]');
+  if (game) return openGame(game.dataset.game);
+  const receiptBtn = e.target.closest('[data-receipt]');
+  if (receiptBtn) return showReceipt(receiptBtn.dataset.receipt);
 
   const pct = e.target.closest('[data-pct]');
   if (pct && $('trade').classList.contains('active')) {
@@ -594,19 +674,24 @@ function openFundModal() {
     flutterwave: 'Pay with Flutterwave',
     kora: 'Pay with Kora'
   };
-  const btns = gateways.map(g =>
-    '<button class="primary full fund-gw" data-gw="' + g + '" style="margin-top:8px">' + labels[g] + '</button>'
+  const fiatBtns = gateways.map(g =>
+    '<button class="secondary full fund-gw" data-gw="' + g + '" style="margin-top:8px">' + labels[g] + '</button>'
   ).join('');
 
   modal(
     '<div class="modalhead"><h2>Add money</h2><button class="close">×</button></div>' +
-    '<p class="hint">Available in your country (' + esc(country) + '). Amount is in <b>USD</b>.</p>' +
+    '<p class="hint"><b>Primary:</b> Crypto deposit (fastest). Min $' + MIN_DEPOSIT_USD + ' USD.</p>' +
+    '<button class="primary full" id="goCryptoDeposit" style="margin-top:4px">⛓️ Crypto deposit (recommended)</button>' +
+    '<hr style="margin:16px 0;border:0;border-top:1px solid var(--border)">' +
+    '<p class="hint"><b>Secondary:</b> Card / bank in ' + esc(country) + '</p>' +
     '<label>Amount (USD)</label>' +
     '<input id="fa" type="number" inputmode="decimal" min="10" step="0.01" placeholder="10.00">' +
     '<div id="fm" class="status"></div>' +
-    btns +
-    '<small style="display:block;margin-top:12px">After you pay, your deposit is marked <b>pending</b>. An admin credits your balance after confirming the payment in Paystack / Flutterwave / Kora.</small>'
+    fiatBtns +
+    '<small style="display:block;margin-top:12px">Fiat payments stay <b>pending</b> until an admin confirms and credits your balance.</small>'
   );
+  const go = document.getElementById('goCryptoDeposit');
+  if (go) go.onclick = () => { closeModal(); page('deposit'); };
 
   document.querySelectorAll('.fund-gw').forEach(b => {
     b.onclick = () => startFiatPayment(b.dataset.gw);
@@ -867,7 +952,7 @@ $('verify').onclick = async () => {
 
 function renderGifts() {
   const q = ($('giftsearch').value || '').toLowerCase();
-  const r = $('giftregion').value;
+  const r = ($('giftregion') && $('giftregion').value) || 'ALL';
   const list = GIFT_CARDS.filter(x =>
     (!q || x.brand.toLowerCase().includes(q)) && (!r || x.region === r)
   );
@@ -943,72 +1028,179 @@ function giftModal(id) {
   };
 }
 
-function renderMarket() {
-  $('products').innerHTML = PRODUCTS.map(p =>
-    '<article class="card">' +
-      '<div class="art">' + p.emoji + '</div>' +
-      '<h4>' + esc(p.name) + '</h4>' +
-      '<div class="price">' + moneyUSD(p.priceUSD) + '</div>' +
-      '<button class="primary full" data-prod="' + p.id + '">Order</button>' +
+function renderGames() {
+  const el = $('gamesGrid');
+  if (!el) return;
+  el.innerHTML = GAMES.map(g =>
+    '<article class="card game-card">' +
+      '<div class="gicon">' + g.emoji + '</div>' +
+      '<h3>' + esc(g.name) + '</h3>' +
+      '<p>' + esc(g.desc) + '</p>' +
+      '<button class="primary full" data-game="' + g.id + '">Play</button>' +
     '</article>'
   ).join('');
 }
 
-function productModal(id) {
-  const p = PRODUCTS.find(x => x.id === id);
-  if (!p) return;
-  modal('<div class="modalhead"><h2>' + esc(p.name) + '</h2><button class="close">×</button></div>' +
-    '<label>Quantity</label>' +
-    '<input id="sh_qty" type="number" min="1" max="5" value="1">' +
-    '<label>Delivery name</label>' +
-    '<input id="sh_name" maxlength="80" value="' + esc(data.displayName || '') + '">' +
-    '<label>Phone</label>' +
-    '<input id="sh_phone" type="tel" maxlength="30" value="' + esc(data.phone || '') + '">' +
-    '<label>Delivery address</label>' +
-    '<input id="sh_addr" maxlength="300" placeholder="Street, city, country">' +
-    '<div id="ordertotal" class="quote"></div>' +
-    '<div id="cm" class="status"></div>' +
-    '<button id="confirmBtn" class="primary full">Pay from wallet</button>');
-  const refresh = () => {
-    const qty = Math.max(1, Math.floor(Number($('sh_qty').value) || 1));
-    const total = p.priceUSD * qty;
-    $('ordertotal').textContent = 'Total: ' + moneyUSD(total) + ' · Wallet: ' + moneyUSD(balanceOf('USD'));
+function openGame(id) {
+  if (data?.status === 'banned') return toast('Account banned');
+  if (data?.status === 'pending_verification') return toast('Verify your email first');
+  if (id === 'casino') return gameCasino();
+  if (id === 'tictactoe') return gameTicTacToe();
+  if (id === 'quiz') return gameQuiz();
+}
+
+async function settleGameBet(stake, won, mult, gameName) {
+  stake = Number(stake);
+  if (!(stake >= 1)) throw new Error('Min stake $1');
+  if (balanceOf('USD') < stake) throw new Error('Insufficient cash');
+  const payout = won ? +(stake * mult).toFixed(2) : 0;
+  const net = won ? +(payout - stake).toFixed(2) : -stake;
+  const updates = { updatedAt: serverTimestamp(), ...debitCashUpdates(stake) };
+  if (won && payout > 0) Object.assign(updates, creditCashUpdates(payout));
+  await updateDoc(doc(db, 'users', me.uid), updates);
+  const receiptId = 'GM_' + Date.now().toString(36).toUpperCase();
+  await addDoc(collection(db, 'transactions'), {
+    uid: me.uid,
+    type: 'game_' + gameName,
+    status: won ? 'won' : 'lost',
+    amountUSD: net,
+    amountDisplay: (net >= 0 ? '+' : '') + moneyUSD(net),
+    stake,
+    payout,
+    receiptId,
+    createdAt: serverTimestamp()
+  });
+  return { net, payout, receiptId, won };
+}
+
+function gameCasino() {
+  modal('<div class="modalhead"><h2>🎰 Lucky Flip</h2><button class="close">×</button></div>' +
+    '<p>Heads or tails. Win pays <b>1.95×</b> your stake.</p>' +
+    '<label>Stake (USD)</label>' +
+    '<input id="gstake" type="number" min="1" step="1" value="5">' +
+    '<div class="row" style="gap:8px;margin-top:12px">' +
+      '<button class="primary" id="flipH" style="flex:1">Heads</button>' +
+      '<button class="secondary" id="flipT" style="flex:1">Tails</button>' +
+    '</div>' +
+    '<div id="gmsg" class="status"></div>');
+  const run = async (choice) => {
+    try {
+      const stake = Number($('gstake').value);
+      const result = Math.random() < 0.5 ? 'H' : 'T';
+      const won = choice === result;
+      const r = await settleGameBet(stake, won, 1.95, 'casino');
+      msg($('gmsg'), (won ? '✅ You won! ' : '❌ You lost. ') + (result === 'H' ? 'Heads' : 'Tails') +
+        ' · Net ' + (r.net >= 0 ? '+' : '') + moneyUSD(r.net) + ' · Rx ' + r.receiptId, won ? 'success' : 'error');
+    } catch (x) { msg($('gmsg'), err(x), 'error'); }
   };
-  $('sh_qty').oninput = refresh;
-  refresh();
-  pendingAction = async () => {
-    const qty = Math.max(1, Math.floor(Number($('sh_qty').value) || 1));
-    const total = p.priceUSD * qty;
-    if (balanceOf('USD') < total) throw new Error('Insufficient cash balance');
-    await updateDoc(doc(db, 'users', me.uid), {
-      ...debitCashUpdates(total),
-      updatedAt: serverTimestamp()
-    });
-    await addDoc(collection(db, 'orders'), {
-      uid: me.uid,
-      type: 'marketplace',
-      productId: p.id,
-      productName: p.name,
-      quantity: qty,
-      totalUSD: total,
-      shipping: {
-        name: $('sh_name').value.trim(),
-        phone: $('sh_phone').value.trim(),
-        address: $('sh_addr').value.trim()
-      },
-      status: 'pending_fulfilment',
-      createdAt: serverTimestamp()
-    });
-    await addDoc(collection(db, 'transactions'), {
-      uid: me.uid,
-      type: 'marketplace_order',
-      status: 'pending_fulfilment',
-      amountUSD: -total,
-      amountDisplay: '-' + moneyUSD(total),
-      createdAt: serverTimestamp()
-    });
-    closeModal();
-    toast('Order placed — ' + moneyUSD(total));
+  $('flipH').onclick = () => run('H');
+  $('flipT').onclick = () => run('T');
+}
+
+function gameTicTacToe() {
+  let board = Array(9).fill(null);
+  let over = false;
+  const stakeDefault = 5;
+  modal('<div class="modalhead"><h2>⭕ Tic Tac Toe</h2><button class="close">×</button></div>' +
+    '<p>You are X. Stake <b>$' + stakeDefault + '</b> · Win pays 1.8×</p>' +
+    '<div id="ttt" class="ttt-grid"></div>' +
+    '<div id="gmsg" class="status"></div>' +
+    '<button class="secondary full" id="tttReset">New game</button>');
+  const lines = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+  const winnerOf = () => {
+    for (const [a,b,c] of lines) if (board[a] && board[a] === board[b] && board[a] === board[c]) return board[a];
+    if (board.every(Boolean)) return 'draw';
+    return null;
+  };
+  const botMove = () => {
+    const empty = board.map((v,i) => v ? null : i).filter(v => v != null);
+    if (!empty.length) return;
+    for (const mark of ['O','X']) {
+      for (const i of empty) {
+        board[i] = mark;
+        const w = winnerOf();
+        if (w === mark) {
+          if (mark === 'O') return;
+          board[i] = null;
+          board[i] = 'O';
+          return;
+        }
+        board[i] = null;
+      }
+    }
+    board[empty[Math.floor(Math.random() * empty.length)]] = 'O';
+  };
+  const paint = () => {
+    $('ttt').innerHTML = board.map((v,i) =>
+      '<button type="button" class="ttt-cell" data-i="' + i + '">' + (v || '') + '</button>'
+    ).join('');
+  };
+  const finish = async (w) => {
+    over = true;
+    try {
+      if (w === 'draw') {
+        msg($('gmsg'), 'Draw — no stake charged.', 'success');
+        return;
+      }
+      const won = w === 'X';
+      const r = await settleGameBet(stakeDefault, won, 1.8, 'tictactoe');
+      msg($('gmsg'), (won ? 'You win! ' : 'Bot wins. ') + (r.net >= 0 ? '+' : '') + moneyUSD(r.net) + ' · Rx ' + r.receiptId, won ? 'success' : 'error');
+    } catch (x) { msg($('gmsg'), err(x), 'error'); }
+  };
+  const onCell = async (i) => {
+    if (over || board[i]) return;
+    if (balanceOf('USD') < stakeDefault) return msg($('gmsg'), 'Need $' + stakeDefault + ' cash', 'error');
+    board[i] = 'X';
+    let w = winnerOf();
+    if (w) { paint(); return finish(w); }
+    botMove();
+    paint();
+    w = winnerOf();
+    if (w) finish(w);
+  };
+  paint();
+  $('ttt').onclick = e => {
+    const c = e.target.closest('[data-i]');
+    if (c) onCell(Number(c.dataset.i));
+  };
+  $('tttReset').onclick = () => { board = Array(9).fill(null); over = false; msg($('gmsg'), '', ''); paint(); };
+}
+
+const QUIZ_Q = [
+  { q: 'What does BTC stand for?', a: ['Bitcoin', 'Big Token Coin', 'Binary Trade Code', 'Block Transfer'], c: 0 },
+  { q: 'USDT is a…', a: ['Stablecoin', 'NFT', 'Mining pool', 'DEX'], c: 0 },
+  { q: 'A blockchain is…', a: ['A distributed ledger', 'A bank branch', 'A password', 'An exchange only'], c: 0 },
+  { q: 'ETH is the native coin of…', a: ['Ethereum', 'Bitcoin', 'Solana', 'TRON'], c: 0 },
+  { q: 'Cold wallet means…', a: ['Offline storage', 'Hot exchange account', 'Mining rig', 'Gas fee'], c: 0 }
+];
+
+function gameQuiz() {
+  let i = 0, score = 0;
+  const stake = 5;
+  modal('<div class="modalhead"><h2>🧠 Crypto Quiz</h2><button class="close">×</button></div>' +
+    '<p>Stake $' + stake + ' · Score 4/5 or better to win 2×</p>' +
+    '<div id="quizBox"></div><div id="gmsg" class="status"></div>');
+  const show = () => {
+    if (i >= QUIZ_Q.length) return endQuiz();
+    const qq = QUIZ_Q[i];
+    $('quizBox').innerHTML = '<p><b>Q' + (i + 1) + '.</b> ' + esc(qq.q) + '</p>' +
+      qq.a.map((t, idx) => '<button type="button" class="secondary full quiz-ans" data-a="' + idx + '" style="margin-top:6px">' + esc(t) + '</button>').join('');
+  };
+  const endQuiz = async () => {
+    $('quizBox').innerHTML = '<p>Score: ' + score + '/' + QUIZ_Q.length + '</p>';
+    const won = score >= 4;
+    try {
+      const r = await settleGameBet(stake, won, 2, 'quiz');
+      msg($('gmsg'), (won ? 'Passed! ' : 'Try again. ') + (r.net >= 0 ? '+' : '') + moneyUSD(r.net) + ' · Rx ' + r.receiptId, won ? 'success' : 'error');
+    } catch (x) { msg($('gmsg'), err(x), 'error'); }
+  };
+  show();
+  $('quizBox').onclick = e => {
+    const b = e.target.closest('.quiz-ans');
+    if (!b) return;
+    if (Number(b.dataset.a) === QUIZ_Q[i].c) score++;
+    i++;
+    show();
   };
 }
 
@@ -1655,6 +1847,7 @@ function histCategory(type) {
   if (t.includes('withdraw')) return 'withdrawal';
   if (t.includes('gift') || t.includes('marketplace') || t.includes('order')) return 'order';
   if (t.includes('swap') || t.includes('convert')) return 'swap';
+  if (t.includes('game')) return 'order';
   if (t.includes('credit') || t.includes('bonus') || t.includes('referral') || t.includes('manual')) return 'deposit';
   return 'other';
 }
@@ -1789,10 +1982,15 @@ function renderHistoryList() {
     if (x.provider) extra.push(x.provider);
     if (x.asset) extra.push(x.asset);
 
+    const rid = x.receiptId || x.reference || x._id || '';
+    const needRx = /deposit|withdraw|game_|gift|order|position_close|swap|referral_reward/i.test(String(x.type));
+    const rxBtn = (needRx && rid)
+      ? '<button type="button" class="link rx-btn" data-receipt="' + esc(rid) + '">Receipt</button>'
+      : '';
     return '<div class="tx-item">' +
       '<div class="tx-icon">' + histIcon(x.type) + '</div>' +
       '<div class="tx-body"><b>' + esc(histTitle(x.type)) + '</b>' + badge +
-      '<small>' + esc(when) + (extra.length ? ' · ' + esc(extra.join(' · ')) : '') + '</small></div>' +
+      '<small>' + esc(when) + (extra.length ? ' · ' + esc(extra.join(' · ')) : '') + '</small>' + rxBtn + '</div>' +
       '<div class="tx-right"><span class="tx-amt ' + cls + '">' + esc(String(amt)) + '</span></div>' +
     '</div>';
   }).join('');
@@ -1957,3 +2155,94 @@ document.addEventListener('change', e => {
     fillNetworks();
   }
 });
+
+
+function showReceipt(rid) {
+  const x = historyCache.find(h => (h.receiptId || h.reference || h._id) === rid) || {};
+  const when = x.createdAt && x.createdAt.toDate ? x.createdAt.toDate().toLocaleString() : '';
+  modal(
+    '<div class="modalhead"><h2>Receipt</h2><button class="close">×</button></div>' +
+    '<div class="receipt">' +
+      '<div class="brand">N</div>' +
+      '<h3>NovaPay</h3>' +
+      '<p class="muted">Official transaction receipt</p>' +
+      '<div class="row"><span>Receipt ID</span><b>' + esc(rid) + '</b></div>' +
+      '<div class="row"><span>Type</span><b>' + esc(histTitle(x.type || 'transaction')) + '</b></div>' +
+      '<div class="row"><span>Status</span><b>' + esc(x.status || '—') + '</b></div>' +
+      '<div class="row"><span>Amount</span><b>' + esc(x.amountDisplay || moneyUSD(x.amountUSD || 0)) + '</b></div>' +
+      '<div class="row"><span>Date</span><b>' + esc(when) + '</b></div>' +
+      (x.network ? '<div class="row"><span>Network</span><b>' + esc(x.network) + '</b></div>' : '') +
+      (x.symbol ? '<div class="row"><span>Symbol</span><b>' + esc(x.symbol) + '</b></div>' : '') +
+      '<button class="secondary full" id="printRx" style="margin-top:12px">Print / Save</button>' +
+    '</div>'
+  );
+  const b = document.getElementById('printRx');
+  if (b) b.onclick = () => window.print();
+}
+
+// --- Popup ads / warnings ---
+const AD_POPUPS = [
+  { id: 'welcome', title: 'Welcome to NovaPay', body: 'Deposit with crypto for fastest funding. Verify your email to activate your account.', cta: 'Got it' },
+  { id: 'crypto', title: 'Tip: Crypto first', body: 'On-chain and Trust Wallet deposits are the primary way to fund. Card gateways are secondary and need admin confirmation.', cta: 'OK' }
+];
+
+function maybeShowAdPopup() {
+  if (!me || !data) return;
+  if (sessionStorage.getItem('np_ad_shown')) return;
+  const ad = AD_POPUPS[Math.floor(Math.random() * AD_POPUPS.length)];
+  sessionStorage.setItem('np_ad_shown', '1');
+  setTimeout(() => {
+    modal(
+      '<div class="modalhead"><h2>' + esc(ad.title) + '</h2><button class="close">×</button></div>' +
+      '<p>' + esc(ad.body) + '</p>' +
+      '<button class="primary full close">' + esc(ad.cta) + '</button>'
+    );
+  }, 1800);
+}
+
+// --- Intro + tutorial ---
+function shouldShowIntro() {
+  return !localStorage.getItem('np_intro_done');
+}
+
+function showIntro() {
+  const intro = $('intro');
+  if (!intro) return;
+  intro.classList.remove('hidden');
+  // Smooth scroll reveal for cards when in view
+  try {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(en => {
+        if (en.isIntersecting) en.target.classList.add('tw-fade');
+      });
+    }, { threshold: 0.15 });
+    intro.querySelectorAll('.tw-card, .tw-step').forEach(el => io.observe(el));
+  } catch (_) {}
+  intro.onclick = (e) => {
+    const btn = e.target.closest('[data-intro]');
+    if (!btn) return;
+    const act = btn.dataset.intro;
+    if (act === 'done' || act === 'skip' || act === 'next') {
+      localStorage.setItem('np_intro_done', '1');
+      intro.classList.add('hidden');
+      intro.classList.add('tw-exit');
+    }
+    if (act === 'android') {
+      window.open(ANDROID_APP_URL, '_blank', 'noopener');
+    }
+  };
+}
+
+// Boot intro before auth if first visit
+if (shouldShowIntro()) {
+  document.addEventListener('DOMContentLoaded', showIntro);
+} else {
+  document.addEventListener('DOMContentLoaded', () => {
+    const intro = $('intro');
+    if (intro) intro.classList.add('hidden');
+  });
+}
+
+// After login show ad once
+const _origOnAuth = onAuthStateChanged;
+// Hook: call maybeShowAdPopup when data loads - add to render
